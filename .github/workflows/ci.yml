@@ -66,17 +66,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # PRs build verify-only. main pushes the single-platform image by digest
-      # (no tag yet) for the merge job.
-      - name: Build (push by digest on main)
-        id: build
+      # Two build steps, never both: a tagged local image cannot be pushed by
+      # digest (buildx: "can't push tagged ref ... by digest"), so PRs build and
+      # load a throwaway tag to smoke-test, and main pushes untagged by digest
+      # for the merge job. Same cache scope, so nothing is built twice.
+      - name: Build and load (pull requests)
+        if: github.event_name != 'push' || github.ref != 'refs/heads/main'
         uses: docker/build-push-action@v7
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          load: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
+          load: true
           tags: sourdough-planner:ci
-          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/sourdough-planner,push-by-digest=true,name-canonical=true,push=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           cache-from: type=gha,scope=${{ steps.prep.outputs.pair }}
           cache-to: type=gha,scope=${{ steps.prep.outputs.pair }},mode=max
 
@@ -96,6 +97,17 @@ jobs:
             sleep 1
           done
           echo "container never became healthy"; docker logs sdp-ci; docker stop sdp-ci; exit 1
+
+      - name: Build and push by digest (main)
+        id: build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/sourdough-planner,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ steps.prep.outputs.pair }}
+          cache-to: type=gha,scope=${{ steps.prep.outputs.pair }},mode=max
 
       - name: Export digest
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
