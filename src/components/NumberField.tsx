@@ -60,7 +60,13 @@ export function NumberField({
     if (integer) n = Math.round(n);
     if (min !== undefined) n = Math.max(min, n);
     if (max !== undefined) n = Math.min(max, n);
-    onChange(n / scale);
+    // The plan gets the clamped value; the text keeps what was typed so that
+    // backspacing "24" to "2" on a field with min 10 does not snap to "10"
+    // mid-edit. Mark the new value as seen so the re-sync above leaves it be;
+    // blur tidies the text to the value that actually applied.
+    const next = n / scale;
+    setSeen(next);
+    onChange(next);
   };
 
   return (
