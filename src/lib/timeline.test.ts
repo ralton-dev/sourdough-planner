@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PRESETS } from "./presets";
-import { DEFAULT_BULK_TABLE, buildTimeline, bulkEstimate } from "./timeline";
+import { DEFAULT_BULK_TABLE, buildTimeline, bulkEstimate, foldCountFor } from "./timeline";
 import { DEFAULT_SETTINGS, type Plan } from "./types";
 
 const plan = (over: Partial<Plan> = {}): Plan => ({
@@ -90,6 +90,54 @@ describe("timeline", () => {
     expect(t.folds).toHaveLength(4);
     expect(t.folds[0]!.getTime()).toBe(bulk.start.getTime() + 30 * 60_000);
     expect(t.folds[3]!.getTime()).toBe(bulk.start.getTime() + 120 * 60_000);
+  });
+
+  it("drops to one early fold with a stand mixer and changes the mix note", () => {
+    const t = buildTimeline(plan({ standMixer: true }), DEFAULT_PRESETS, DEFAULT_BULK_TABLE);
+    const bulk = t.steps.find((s) => s.id === "bulk")!;
+    expect(t.foldCount).toBe(1);
+    expect(t.defaultFoldCount).toBe(1);
+    expect(t.folds).toHaveLength(1);
+    expect(t.folds[0]!.getTime()).toBe(bulk.start.getTime() + 30 * 60_000);
+    expect(t.steps[0]?.label).toBe("Mix (stand mixer)");
+    expect(t.steps[0]?.minutes).toBe(10);
+    expect(t.steps[1]?.start.getTime()).toBe(t.steps[0]?.end.getTime());
+  });
+
+  it("lets the fold count be overridden and keeps folds in the first 30 min slots", () => {
+    const six = buildTimeline(plan({ foldCount: 6 }), DEFAULT_PRESETS, DEFAULT_BULK_TABLE);
+    const bulk = six.steps.find((s) => s.id === "bulk")!;
+    expect(six.folds.map((f) => (f.getTime() - bulk.start.getTime()) / 60_000)).toEqual([
+      30, 60, 90, 120, 150, 180,
+    ]);
+    expect(six.defaultFoldCount).toBe(4);
+    const mixerTwo = buildTimeline(
+      plan({ standMixer: true, foldCount: 2 }),
+      DEFAULT_PRESETS,
+      DEFAULT_BULK_TABLE,
+    );
+    expect(mixerTwo.folds.map((f) => (f.getTime() - bulk.start.getTime()) / 60_000)).toEqual([
+      30, 60,
+    ]);
+    const none = buildTimeline(plan({ foldCount: 0 }), DEFAULT_PRESETS, DEFAULT_BULK_TABLE);
+    expect(none.folds).toEqual([]);
+    expect(none.foldCount).toBe(0);
+  });
+
+  it("falls back to the method default for invalid counts and caps large ones", () => {
+    expect(foldCountFor({ foldCount: -1 })).toBe(4);
+    expect(foldCountFor({ foldCount: 2.5, standMixer: true })).toBe(1);
+    expect(foldCountFor({ foldCount: Number.NaN })).toBe(4);
+    expect(foldCountFor({ foldCount: 99 })).toBe(12);
+  });
+
+  it("never schedules a fold after bulk ends", () => {
+    const t = buildTimeline(
+      plan({ foldCount: 8, timelineOverrides: { bulk: 100 } }),
+      DEFAULT_PRESETS,
+      DEFAULT_BULK_TABLE,
+    );
+    expect(t.folds).toHaveLength(3);
   });
 
   it("gives every selected preset one lane with a bake window", () => {

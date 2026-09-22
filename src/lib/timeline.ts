@@ -85,14 +85,36 @@ export interface Timeline {
   steps: TimelineStep[];
   /** Stretch-and-fold moments during bulk. */
   folds: Date[];
+  /** Sets asked for (default or override) and the default for the mixing method. */
+  foldCount: number;
+  defaultFoldCount: number;
   lanes: Lane[];
   ovenWarnings: string[];
   bulk: BulkEstimate & { usedMinutes: number };
   end: Date;
 }
 
-export const FOLD_COUNT = 4;
+/**
+ * Hand-mixed dough relies on folds for strength: four sets, 30 min apart, is the
+ * common recipe default. A stand mixer develops the gluten up front, so one early
+ * set is plenty and many bakers skip folds entirely. Either way the folds stay in
+ * the first 30-minute slots of bulk, since handling belongs early, not late.
+ */
+export const HAND_FOLD_COUNT = 4;
+export const MIXER_FOLD_COUNT = 1;
+export const MAX_FOLD_COUNT = 12;
 export const FOLD_INTERVAL_MIN = 30;
+
+export function defaultFoldCount(plan: Pick<Plan, "standMixer">): number {
+  return plan.standMixer ? MIXER_FOLD_COUNT : HAND_FOLD_COUNT;
+}
+
+/** The fold count in force: a valid override, else the method default. */
+export function foldCountFor(plan: Pick<Plan, "standMixer" | "foldCount">): number {
+  const v = plan.foldCount;
+  if (v !== undefined && Number.isInteger(v) && v >= 0) return Math.min(v, MAX_FOLD_COUNT);
+  return defaultFoldCount(plan);
+}
 
 const addMin = (d: Date, m: number) => new Date(d.getTime() + m * 60_000);
 
@@ -127,7 +149,16 @@ export function buildTimeline(plan: Plan, presets: Preset[], table: BulkRow[]): 
 
   if (plan.feedStarter) push("feed", "Feed starter", 360, "4–8 h until it peaks, then mix.");
   if (plan.autolyse) push("autolyse", "Autolyse", 45, "Flour plus most of the water. Rest.");
-  push("mix", "Mix", 10, "Add starter and salt. Reserve ~20 g water for the salt.");
+  if (plan.standMixer) {
+    push(
+      "mix",
+      "Mix (stand mixer)",
+      10,
+      "Dough hook, low speed 2–3 min to combine, then speed 2 for 4–6 min until smooth and elastic. Reserve ~20 g water for the salt. Watch the dough temperature; the mixer warms it.",
+    );
+  } else {
+    push("mix", "Mix", 10, "Add starter and salt. Reserve ~20 g water for the salt.");
+  }
   const bulk = push(
     "bulk",
     "Bulk ferment",
@@ -137,8 +168,9 @@ export function buildTimeline(plan: Plan, presets: Preset[], table: BulkRow[]): 
   push("divide", "Divide & pre-shape", 15, "Weigh each piece from the division card.");
   const bench = push("bench", "Bench rest", 25);
 
+  const foldCount = foldCountFor(plan);
   const folds: Date[] = [];
-  for (let i = 1; i <= FOLD_COUNT; i++) {
+  for (let i = 1; i <= foldCount; i++) {
     const t = addMin(bulk.start, i * FOLD_INTERVAL_MIN);
     if (t <= bulk.end) folds.push(t);
   }
@@ -202,6 +234,8 @@ export function buildTimeline(plan: Plan, presets: Preset[], table: BulkRow[]): 
   return {
     steps,
     folds,
+    foldCount,
+    defaultFoldCount: defaultFoldCount(plan),
     lanes,
     ovenWarnings: ovenConflicts(lanes),
     bulk: { ...est, usedMinutes: bulk.minutes },

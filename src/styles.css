@@ -522,6 +522,31 @@ textarea {
   color: var(--muted);
   font-size: 0.85rem;
 }
+.fold-count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.fold-count-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.stepper.small button {
+  width: 36px;
+  height: 36px;
+  font-size: 1.1rem;
+}
+.stepper.small button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.stepper.small input {
+  width: 40px;
+  height: 36px;
+}
 .folds {
   grid-column: 2 / -1;
   display: flex;
@@ -693,12 +718,22 @@ details[open] > summary::before {
   text-align: left;
 }
 
+/*
+ * Print. Browsers fragment grid and flex containers unreliably (Chrome only
+ * since 108, WebKit barely at all), so every container that may straddle a page
+ * is switched to plain block flow, forced breaks go on block-level cards, and
+ * the atomic units (a step, a lane, a piece, a callout) refuse to split.
+ */
+@page {
+  size: A4;
+  margin: 12mm 14mm;
+}
 @media print {
   html,
   body {
     background: #fff;
     color: #000;
-    font-size: 12pt;
+    font-size: 11pt;
   }
   .app {
     max-width: none;
@@ -713,18 +748,58 @@ details[open] > summary::before {
   details:not([open]) {
     display: none !important;
   }
+  .grid,
+  .grid.two,
+  .steps,
+  .lanes,
+  .stack {
+    display: block;
+  }
   .card {
     box-shadow: none;
     border: 1px solid #999;
+    margin: 0 0 10px;
     break-inside: avoid;
     page-break-inside: avoid;
   }
-  .grid.two {
-    grid-template-columns: 1fr 1fr;
+  .card > header {
+    break-after: avoid;
+    page-break-after: avoid;
   }
   .print-page {
     break-before: page;
     page-break-before: always;
+    /* Taller than a page; let it flow and protect its parts instead. */
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+  .step,
+  .lane,
+  .piece,
+  .callout,
+  .window,
+  .folds {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .lane {
+    margin: 0 0 8px;
+  }
+  .lane h3 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  .pieces {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .piece {
+    flex: 1 1 150px;
+  }
+  .piece .big {
+    font-size: 1.7rem;
+    white-space: nowrap;
   }
   input,
   select {

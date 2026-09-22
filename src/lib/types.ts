@@ -47,6 +47,10 @@ export interface Plan {
   timelineOverrides?: Record<string, number>; // stepId -> minutes
   feedStarter?: boolean;
   autolyse?: boolean;
+  /** Dough developed in a stand mixer at mix time; fewer folds are needed. */
+  standMixer?: boolean;
+  /** Stretch-and-fold sets during bulk. Undefined = the default for the mixing method. */
+  foldCount?: number;
 }
 
 export interface Ingredients {

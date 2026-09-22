@@ -1,5 +1,5 @@
 import type { Plan, Preset } from "../lib/types";
-import type { BulkRow, Timeline, TimelineStep } from "../lib/timeline";
+import { MAX_FOLD_COUNT, type BulkRow, type Timeline, type TimelineStep } from "../lib/timeline";
 import { fmtDayTime, fmtDuration, fmtRange, fmtTime } from "../lib/format";
 import { FeedHelper } from "./FeedHelper";
 
@@ -40,6 +40,60 @@ function DurationInput({
           style={{ padding: "0 6px", minHeight: 0 }}
           onClick={() => onChange(undefined)}
           title={`Reset to ${step.defaultMinutes} min`}
+        >
+          ↺
+        </button>
+      )}
+    </div>
+  );
+}
+
+function FoldCountInput({
+  timeline,
+  onChange,
+}: {
+  timeline: Timeline;
+  onChange: (count: number | undefined) => void;
+}) {
+  const n = timeline.foldCount;
+  const set = (v: number) => onChange(Math.min(MAX_FOLD_COUNT, Math.max(0, v)));
+  return (
+    <div className="fold-count">
+      <span className="fold-count-label" id="fold-count-label">
+        Stretch &amp; folds
+      </span>
+      <div className="stepper small" role="group" aria-labelledby="fold-count-label">
+        <button type="button" onClick={() => set(n - 1)} aria-label="Fewer folds" disabled={n <= 0}>
+          −
+        </button>
+        <input
+          type="text"
+          inputMode="numeric"
+          value={n}
+          aria-label="Stretch and fold sets"
+          onChange={(e) => {
+            if (e.target.value === "") return;
+            const v = Number.parseInt(e.target.value, 10);
+            if (Number.isInteger(v) && v >= 0) set(v);
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => set(n + 1)}
+          aria-label="More folds"
+          disabled={n >= MAX_FOLD_COUNT}
+        >
+          +
+        </button>
+      </div>
+      {n !== timeline.defaultFoldCount && (
+        <button
+          type="button"
+          className="btn ghost small"
+          style={{ padding: "0 6px", minHeight: 0 }}
+          onClick={() => onChange(undefined)}
+          title={`Reset to ${timeline.defaultFoldCount}`}
+          aria-label={`Reset to ${timeline.defaultFoldCount} folds`}
         >
           ↺
         </button>
@@ -111,6 +165,15 @@ export function TimelineCard({ plan, timeline, bulkTable, onPlan, onBulkTable }:
           />
           <span>Autolyse</span>
         </label>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={!!plan.standMixer}
+            onChange={(e) => onPlan({ ...plan, standMixer: e.target.checked })}
+          />
+          <span>Stand mixer</span>
+        </label>
+        <FoldCountInput timeline={timeline} onChange={(n) => onPlan({ ...plan, foldCount: n })} />
       </div>
 
       {feedStep && (
@@ -126,19 +189,23 @@ export function TimelineCard({ plan, timeline, bulkTable, onPlan, onBulkTable }:
           <StepRow key={s.id} step={s} ref={start} onChange={(m) => setOverride(s.id, m)}>
             {s.id === "bulk" && (
               <>
-                <div className="folds">
-                  {timeline.folds.map((f, i) => (
-                    <span key={i}>
-                      fold {i + 1} · {fmtTime(f)}
-                    </span>
-                  ))}
-                </div>
+                {timeline.folds.length > 0 && (
+                  <div className="folds">
+                    {timeline.folds.map((f, i) => (
+                      <span key={i}>
+                        fold {i + 1} · {fmtTime(f)}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="note" style={{ gridColumn: "2 / -1" }}>
                   Guide: {fmtRange(timeline.bulk.minMinutes, timeline.bulk.maxMinutes)} at{" "}
                   {plan.settings.doughTempC} °C
                   {timeline.bulk.factor !== 1 &&
                     ` (×${timeline.bulk.factor.toFixed(2)} for ${Math.round(plan.settings.inoculation * 100)}% inoculation, a heuristic)`}
                   . Go by the dough, not the clock: 50–75 % rise, domed and jiggly.
+                  {plan.standMixer &&
+                    " The mixer built the strength: one early set of folds is plenty, none if you mixed to a full windowpane, then leave the dough alone."}
                 </div>
               </>
             )}

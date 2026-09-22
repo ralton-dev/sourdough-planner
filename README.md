@@ -9,7 +9,8 @@ bakes: rolls, loaves, pizza bases, whatever you keep as presets. It answers two 
    mixing to baking with a lane per item.
 
 Built for a phone or tablet on the kitchen counter: big numbers, numeric keypads, a
-read-only kitchen mode that keeps the screen awake, dark mode, and a two-page print layout.
+read-only kitchen mode that keeps the screen awake, dark mode, and a print layout (A4, the
+timeline on its own page, no step or lane split across pages).
 
 ## Modes
 
@@ -47,10 +48,16 @@ time, and a check row confirms the displayed ingredients add up to the displayed
 
 ## Timeline
 
-Mix, bulk ferment (with four stretch-and-folds), divide, bench rest, then one lane per item:
+Mix, bulk ferment (with stretch-and-folds), divide, bench rest, then one lane per item:
 shape, proof (room or cold retard with an earliest/latest bake window), bake. Every duration
 is editable and edits cascade. Optional steps: feed the starter first (with a feed helper),
 autolyse.
+
+Folds sit in the first 30-minute slots of bulk, because handling belongs early and the dough
+should be left alone at the end. Hand-mixed dough defaults to four sets; ticking **Stand
+mixer** changes the mix step to a dough-hook routine and drops the default to one early set,
+since the mixer builds the gluten up front and most bakers then do zero or one set. The count
+is editable either way (0–12), and the folds always stay at 30, 60, 90 … minutes into bulk.
 
 The bulk estimate comes from an editable table keyed on dough temperature, scaled for
 inoculation outside 20–25 %. It is a guide; the UI says so. The target is a 50–75 % rise,

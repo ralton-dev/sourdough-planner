@@ -72,6 +72,7 @@ export function newPlan(overrides: Partial<Plan> = {}): Plan {
     timelineOverrides: {},
     feedStarter: false,
     autolyse: false,
+    standMixer: false,
     ...overrides,
   };
 }
