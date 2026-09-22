@@ -20,6 +20,7 @@ import { TimelineCard } from "./components/TimelineCard";
 import { SavedPlans } from "./components/SavedPlans";
 import { PresetsPage } from "./components/PresetsPage";
 import { KitchenMode } from "./components/KitchenMode";
+import { Footer } from "./components/Footer";
 
 type View = "plan" | "presets";
 
@@ -139,9 +140,7 @@ export function App() {
         />
       )}
 
-      <p className="footer">
-        Percentages are of total flour, starter included. Bulk times are a guide; the dough decides.
-      </p>
+      <Footer />
 
       {kitchen && (
         <KitchenMode

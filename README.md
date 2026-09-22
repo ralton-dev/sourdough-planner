@@ -63,6 +63,12 @@ Everything lives in the browser's localStorage: presets, the bulk table, the cur
 saved plans and the half-gram-salt preference. The Presets page has JSON export and import
 to move between devices or back up. There is no server-side state.
 
+## Privacy
+
+Nothing a visitor enters leaves their browser. There are no accounts, cookies or analytics,
+and the server keeps no state. The public instance sits behind Cloudflare, which sees
+visitor IP addresses as any web host does. The footer says the same in-app.
+
 ## Development
 
 ```
@@ -102,7 +108,8 @@ Neither health endpoint requires auth.
 
 - **Inbound:** TCP `PORT` (8080) from the ingress. Plain HTTP; TLS terminates upstream.
 - **Outbound:** none. No APIs, no fonts, no CDN, no telemetry, no update checks. The bundle
-  is self-contained and the server makes no outbound connections.
+  is self-contained and the server makes no outbound connections. The footer links to GitHub
+  and Ko-fi are plain anchors the visitor chooses to follow; the app never requests either.
 - No WebSockets. No absolute URLs are generated, so `X-Forwarded-Proto` is not consulted.
   No cookies are set. Served from the domain root with root-relative asset URLs.
 

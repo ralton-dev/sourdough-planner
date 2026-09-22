@@ -25,7 +25,7 @@ migrations, no outbound calls, no auth of its own. What remains, and where it is
 | Postgres TLS                                                                             | n/a              | no database                                                                                                 |
 | Migrations                                                                               | n/a              | no database                                                                                                 |
 | Inbound and outbound network paths enumerated                                            | **done**         | `README.md` §Network — inbound 8080 only, zero egress                                                       |
-| Binds `0.0.0.0`; no unlisted outbound calls                                              | **done**         | `HOST` default; bundle self-contained (no fonts, CDNs, analytics)                                           |
+| Binds `0.0.0.0`; no unlisted outbound calls                                              | **done**         | `HOST` default; bundle self-contained (no fonts, CDNs, analytics). Footer links are user-initiated only     |
 | `X-Forwarded-Proto`, `Secure` cookies, no scheme redirect                                | n/a / done       | no cookies, no absolute URLs, no redirects                                                                  |
 | Endpoints that must bypass an interactive login                                          | **none**         | health probes are hit by the kubelet inside the cluster, not through Cloudflare; no webhooks or API clients |
 | Tracing                                                                                  | none             | no SDK is loaded; nothing to gate                                                                           |
@@ -83,5 +83,7 @@ A merge to `main` is not a release; the running version can be behind `main`.
 - NetworkPolicy: ingress from the ingress controller on 8080; **no egress** at all.
 - Resources are tiny: the server idles at a few MB; 25m/32Mi requests and 200m/128Mi limits
   as for finance-planner's web are ample.
-- Auth: none in the app. Put the hostname behind the cluster's Cloudflare Access with the
-  usual owner-only policy; no bypass paths are needed.
+- Auth: none in the app, and none needed: the hostname is public. It has no server-side
+  state, accepts only `GET`/`HEAD`, and every visitor's data stays in their own browser. Keep
+  the hostname in Terraform with an allow-everyone policy so the exposure is deliberate, and
+  rely on Cloudflare caching, rate limiting and bot protection rather than Access.

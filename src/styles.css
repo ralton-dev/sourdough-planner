@@ -666,6 +666,32 @@ details[open] > summary::before {
   font-size: 0.8rem;
   text-align: center;
 }
+.footer p {
+  margin: 0 0 8px;
+}
+.footer a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.footer-links {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+.footer-privacy {
+  max-width: 48ch;
+  margin: 0 auto;
+}
+.footer-privacy > summary {
+  justify-content: center;
+  min-height: 32px;
+  font-weight: 500;
+}
+.footer-privacy p {
+  margin-top: 4px;
+  text-align: left;
+}
 
 @media print {
   html,
