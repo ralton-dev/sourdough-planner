@@ -1,0 +1,80 @@
+import type { Preset } from "./types";
+
+/** Seeded on first run. Fully editable; "reset to defaults" restores exactly this list. */
+export const DEFAULT_PRESETS: Preset[] = [
+  {
+    id: "roll",
+    name: "Roll",
+    icon: "🥐",
+    defaultWeight: 70,
+    minWeight: 50,
+    maxWeight: 130,
+    flexPriority: 0,
+    proof: "room",
+    proofMinutes: [60, 90],
+    bake: { tempC: 220, minutes: [18, 22], steam: true },
+    note: "Tight pre-shape; proofs fastest; bake first. Steam for the first 8 min.",
+    hydrationSensitive: true,
+  },
+  {
+    id: "loaf",
+    name: "Loaf",
+    icon: "🍞",
+    defaultWeight: 600,
+    minWeight: 400,
+    maxWeight: 1000,
+    flexPriority: 2,
+    proof: "either",
+    proofMinutes: [90, 180],
+    bake: { tempC: 250, minutes: [40, 45], steam: false },
+    note: "Boule or batard. Bench rest 20–30 min, shape, banneton. 250 °C lidded 20 min, then 230 °C uncovered 20–25 min.",
+  },
+  {
+    id: "pizza",
+    name: "Pizza base",
+    icon: "🍕",
+    defaultWeight: 250,
+    minWeight: 200,
+    maxWeight: 320,
+    flexPriority: 0,
+    proof: "cold",
+    proofMinutes: [1440, 4320],
+    bake: { tempC: 280, minutes: [5, 8], steam: false },
+    note: "Ball after bulk, oiled container, fridge 24–72 h. Hottest oven available, on steel or stone.",
+    hydrationSensitive: true,
+  },
+  {
+    id: "baguette",
+    name: "Baguette",
+    icon: "🥖",
+    defaultWeight: 300,
+    minWeight: 250,
+    maxWeight: 350,
+    flexPriority: 1,
+    proof: "room",
+    proofMinutes: [45, 75],
+    bake: { tempC: 240, minutes: [22, 25], steam: true },
+    note: "Pre-shape log, rest, final shape, couche.",
+  },
+  {
+    id: "focaccia",
+    name: "Focaccia (per tray)",
+    icon: "🫓",
+    defaultWeight: 800,
+    minWeight: 500,
+    maxWeight: 1200,
+    flexPriority: 1,
+    proof: "room",
+    proofMinutes: [120, 240],
+    bake: { tempC: 220, minutes: [22, 28], steam: false },
+    note: "Oiled tray, dimple, proof 2–4 h.",
+  },
+];
+
+export function clonePresets(list: Preset[] = DEFAULT_PRESETS): Preset[] {
+  return list.map((p) => ({
+    ...p,
+    proofMinutes: [...p.proofMinutes] as [number, number],
+    bake: { ...p.bake, minutes: [...p.bake.minutes] as [number, number] },
+  }));
+}

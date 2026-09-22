@@ -1,0 +1,171 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Default token is read-only. Only the image jobs ask for packages: write.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Format, lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run format
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  # Build each architecture on its native runner and push by digest; the merge
+  # job assembles the manifest list. arm64 uses the in-cluster self-hosted
+  # runner (homelab-arm64) ONLY on push-to-main: fork PRs fire pull_request and
+  # therefore never select it, falling back to GitHub's hosted arm runner.
+  # amd64 always uses ubuntu-latest. Do not loosen this expression: the runner
+  # is privileged on a home LAN and this condition is what keeps strangers off it.
+  docker:
+    name: Image (${{ matrix.platform }})
+    needs: check
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    runs-on: ${{ (matrix.platform == 'linux/arm64' && github.event_name == 'push' && github.ref == 'refs/heads/main') && 'homelab-arm64' || (matrix.platform == 'linux/arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Prepare platform tag
+        id: prep
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: echo "pair=${PLATFORM//\//-}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # PRs build verify-only. main pushes the single-platform image by digest
+      # (no tag yet) for the merge job.
+      - name: Build (push by digest on main)
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          load: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
+          tags: sourdough-planner:ci
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/sourdough-planner,push-by-digest=true,name-canonical=true,push=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          cache-from: type=gha,scope=${{ steps.prep.outputs.pair }}
+          cache-to: type=gha,scope=${{ steps.prep.outputs.pair }},mode=max
+
+      - name: Smoke-start container
+        if: github.event_name != 'push' || github.ref != 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          docker run --rm -d --name sdp-ci --read-only --user 1000:1000 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            -e APP_VERSION=ci -p 18080:8080 sourdough-planner:ci
+          for i in $(seq 1 20); do
+            if curl -fsS http://localhost:18080/healthz | grep -q '"version":"ci"' \
+               && curl -fsS http://localhost:18080/readyz >/dev/null \
+               && curl -fsS http://localhost:18080/ | grep -qi '<title>'; then
+              echo "healthz, readyz and / responded"; docker stop sdp-ci; exit 0
+            fi
+            sleep 1
+          done
+          echo "container never became healthy"; docker logs sdp-ci; docker stop sdp-ci; exit 1
+
+      - name: Export digest
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ steps.prep.outputs.pair }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Assemble and push the multi-arch manifest list. Tags: sha-<full sha> + latest.
+  docker-merge:
+    name: Multi-arch manifest
+    needs: docker
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/sourdough-planner
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest
+
+      - name: Create + push manifest list
+        working-directory: /tmp/digests
+        run: |
+          # shellcheck disable=SC2046  # intentional split: -t flags + digest refs
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf 'ghcr.io/${{ github.repository_owner }}/sourdough-planner@sha256:%s ' *)
+
+      - name: Inspect and summarise
+        run: |
+          docker buildx imagetools inspect \
+            ghcr.io/${{ github.repository_owner }}/sourdough-planner:${{ steps.meta.outputs.version }}
+          {
+            echo "## Image"
+            echo
+            echo '```'
+            echo "ghcr.io/${{ github.repository_owner }}/sourdough-planner:${{ steps.meta.outputs.version }}"
+            echo '```'
+            echo
+            echo "Pin this tag in homelab-k8s (manifests/sourdough-planner) and set APP_VERSION to match."
+          } >> "$GITHUB_STEP_SUMMARY"
