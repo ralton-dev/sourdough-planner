@@ -1,12 +1,15 @@
 # Sourdough Planner
 
-A small single-user web app that plans one bulk batch of sourdough and splits it into several
-bakes: rolls, loaves, pizza bases, whatever you keep as presets. It answers two questions:
+A small single-user web app that plans a bake: one bulk batch of sourdough split into several
+bakes (rolls, loaves, pizza bases, whatever you keep as presets), and any other doughs made
+alongside it, such as a loaf with cheese worked into a portion of the batch, or burger buns from
+an egg-and-milk dough mixed on its own. It answers two questions:
 
-1. **What goes into the batch?** Flour, water, starter and salt, using _true_ hydration (the
-   water and flour inside the starter are counted).
+1. **What goes into each mix?** Flour, water, starter and salt, using _true_ hydration (the
+   water and flour inside the starter are counted), and each dough's butter, egg, milk and
+   add-ins.
 2. **How do I divide it?** Weight per piece for each item, plus a clock-time schedule from
-   mixing to baking with a lane per item.
+   mixing to baking with a track per dough and a lane per item.
 
 Built for a phone or tablet on the kitchen counter: big numbers, numeric keypads, a
 read-only kitchen mode that keeps the screen awake, dark mode, and a print layout (A4, the
@@ -24,9 +27,14 @@ timeline on its own page, no step or lane split across pages).
 
 Switching modes keeps the items and settings.
 
+Every item line is made from a dough: the one the line picks, else its preset's, else the main
+dough, which is the Batch settings. Both modes plan every dough in the plan at once, from one
+starter shared between them; see [Doughs and variations](#doughs-and-variations).
+
 ## The maths
 
-All percentages are of **total flour**, which includes the flour in the starter.
+All percentages are of **total flour**, which includes the flour in the starter. For the main
+dough:
 
 ```
 starterFlour = S / (1 + h_s)         addedFlour = S / i
@@ -41,17 +49,60 @@ Items mode inverts it: `totalFlour = totalDough / (1 + H + s)` and
 
 The reference bake from the spec is a unit test: 250 g starter at 100 %, 25 % inoculation,
 75 % hydration, 2 % salt gives 1000 g flour, 718.75 g water, 22.5 g salt, 1991 g dough, and
-two pizzas, four rolls and two loaves of about 606 g. The inverse returns 250 g starter.
+two pizzas, four rolls and two loaves of about 606 g (with the 70 g rolls the app had then).
+The inverse returns 250 g starter.
+
+### More than one dough
+
+Everything runs in flour. Each dough has a factor _k_, the grams of dough one gram of its flour
+makes: `1 + H + s` for the main dough, plus each enrichment, add-in and soaker as a fraction of
+flour. A dough mixed separately counts an enrichment less the water it carries (milk is 88 %
+water, egg 76 %, butter 16 %), because that water comes off its water line; a dough split from
+the main one counts it whole, since the dough it is cut from is already mixed. A piece of _w_
+grams needs `w / (k × (1 − L))` grams of flour, or `w / (k_dough × (1 − L))` with the add-ins
+tick box off, where `k_dough` leaves the add-ins out.
+
+From starter, the starter fixes the batch's flour, `S / i + S / (1 + h_s)`, and the flex items
+share whatever flour the others leave, highest priority first, as before; spare or short is
+reported in grams of main dough. From items, the flour is the sum of what the lines need and the
+starter follows from it as above. Either way an all-lean plan gets the batch it always did.
+
+Each dough then takes its share: starter in proportion to its flour (inoculation and starter
+hydration are plan-wide), water to its hydration less what its starter, milk, egg and butter
+already hold, salt at its rate, and each add-in as a fraction of its flour. When the liquids
+alone pass the target, the water line is 0 and a warning gives the hydration they make.
+
+The main dough and the doughs split from it are one mix: you weigh and mix it once and take the
+split portions out later. A dough mixed separately is a mix of its own, with its own table.
+
+**Worked example A** (a unit test). From starter, 250 g, at the reference settings with no
+bench loss. Items: a plain loaf that flexes between 400 and 1000 g, and a loaf pinned at 600 g
+on Jalapeño cheddar (mature cheddar 25 %, jalapeño 8 %, split off at fold 1).
+
+- The batch holds 1125 g of flour: 1000 g added and 125 g in the starter.
+- Jalapeño cheddar makes `k = 1 + 0.75 + 0.02 + 0.25 + 0.08 = 2.10` g of loaf per gram of
+  flour, so the 600 g loaf needs 285.714 g of flour: a 505.714 g portion of main dough
+  (285.714 × 1.77) with 71.429 g of cheddar and 22.857 g of jalapeño worked in.
+- The plain loaf could take the other 839.286 g of flour, 1485.5 g of dough. It stops at its
+  1000 g maximum, and 485.5 g of main dough is spare.
+- It is still one mix, the reference batch: 1000 g flour, 718.75 g water, 250 g starter, 22.5 g
+  salt. At fold 1 the timeline says "Take 506 g of dough for Jalapeño cheddar. Work in 71 g
+  mature cheddar, 23 g jalapeño (fresh, diced)." The division card shows the loaf at 600 g:
+  506 g dough + 94 g add-ins.
+
+With the add-ins tick box off, the 600 g is plain dough: the portion is 600 g, the finished loaf
+712 g, and 391.25 g of main dough is spare.
 
 Everything in `src/lib` is a pure function with no rounding; rounding happens at display
-time, and a check row confirms the displayed ingredients add up to the displayed total.
+time, and a check row under each mix confirms its displayed lines, add-ins included, add up to
+its displayed total.
 
 ## Timeline
 
 Mix, bulk ferment (with stretch-and-folds), divide, bench rest, then one lane per item:
 shape, proof (room or cold retard with an earliest/latest bake window), bake. Every duration
-is editable and edits cascade. Optional steps: feed the starter first (with a feed helper),
-autolyse.
+is editable and edits cascade. Optional steps: feed the starter first (with a feed helper
+sized to the starter the whole plan needs), autolyse.
 
 Folds sit in the first 30-minute slots of bulk, because handling belongs early and the dough
 should be left alone at the end. Hand-mixed dough defaults to four sets; ticking **Stand
@@ -64,11 +115,83 @@ inoculation outside 20–25 %. It is a guide; the UI says so. The target is a 50
 domed and jiggly, not the clock. Overlapping bakes produce an oven-clash warning with a
 suggested order.
 
+With more than one dough the common steps come first (any tangzhong, the feed, the autolyse,
+the main mix), then a track per dough. A split dough leaves the main dough's bulk at fold 1
+(30 minutes in), fold 2 (60 minutes) or the end of the mix, whatever the fold count, and is
+divided when its own bulk ends. A dough mixed separately mixes after the one before it and has
+its own bulk, folds, divide and bench rest. Each lane starts from its own dough's bench rest. An
+all-lean plan's timeline is what it always was, step for step.
+
+## Doughs and variations
+
+Doughs live on the Presets page, in a Doughs card between the presets and the backup. Five come
+seeded, all without sugar: Soft bun dough (milk, egg, butter), Soft sandwich dough (milk,
+butter), Buttered (8 % butter), Jalapeño cheddar and Seeded. Add, edit, reorder, delete or reset
+them as you would presets. The main dough is not in the list: it is the Batch settings. A
+preset can name a dough (the dinner roll, burger bun and hot dog bun use Soft bun dough), any
+item line can pick another, and one preset can sit on several doughs in the same plan. A
+dough's notes, "What you did and how it went", print under its mix, and the plan's Notes card
+(this bake) prints whenever something is written in it.
+
+**Split or separate.** Butter and add-ins can be worked into a portion of dough that is already
+mixed, so a dough with only those is _split_: one mix, and at fold 1, fold 2 or the end of the
+mix you take its portion out and work them in. Egg, milk and sugar cannot: no source adds them
+after the gluten is built, and their water has to be in from the start. A dough with egg, yolk
+or milk, sugar above 5 % (or a bulk sweetener's equivalent), a tangzhong, or a hydration or salt
+of its own is _mixed separately_, after the main mix. A dough's method is "auto" unless you set
+one; a split forced on a dough with egg or milk still computes, with a warning. Each dough's
+heading says why it is mixed the way it is.
+
+**What counts as water.** Hydration is true hydration: the water in the starter, milk (88 %),
+egg (76 %), yolk (52 %), butter (16 %) and honey (17 %) all count, and the water line is what
+is left to add. Add-ins and the water they soak in do not count, which is how bakers record
+them. A split dough keeps the main dough's hydration and salt (neither can change after
+mixing), so its butter makes it a little wetter: 76.3 % for Buttered at 75 %.
+
+**Add-ins and piece weights.** Whenever an item is on a dough with add-ins, a tick box under the
+items says whether "Planned weights include add-ins". Ticked, the default, a 600 g jalapeño loaf
+is 600 g finished with 506 g of dough in it. Unticked, it is 600 g of dough with the add-ins on
+top, 712 g in all. Enrichments, sweetness and a tangzhong are the dough itself and sit inside
+the weight either way.
+
+**Tangzhong.** A dough mixed separately can have a tangzhong: some of its flour (5 % by default)
+cooked with five times its weight of liquid to 65 °C. The planner takes that flour and liquid
+out of the mix's own lines (milk when the milk covers it, else water), so the totals do not
+move. The ingredients card shows a "Tangzhong — make first" block, and the timeline opens with
+a tangzhong step: 45 minutes to cool, or 15 when a feed or an autolyse follows and it cools
+during them.
+
+**Bulk.** Each dough's bulk is the main dough's estimate times a factor: 1, plus 0.05 for each
+point of sugar above 3 % (a bulk sweetener by its sugar-equivalent), plus 0.1 when butter and
+oil together reach 20 %, kept between 1 and 2. It is a heuristic and the timeline says so; each
+dough can set its own. The dough is the target, not the clock.
+
+**Sweetness.** No sugar is the default: the culture lives on flour, colour comes from the milk
+and the wash, softness from butter, egg, milk and a tangzhong. Each dough can choose none, sugar
+(sugar, honey or a syrup) or a sweetener (xylitol, erythritol, maltitol, or a high-intensity one
+such as stevia). A bulk sweetener counts as its sugar-equivalent for the bulk, and the editor
+says what each cannot do. Allulose is not offered: it is not authorised for sale in the UK or
+the EU.
+
+**Bake.** A dough can set its own oven temperature, steam and wash (the soft doughs bake at
+190 °C without steam), and that wins over the preset's; the bake times stay the preset's.
+
+The research behind these choices, with its sources, is in
+[`docs/dough-variations-research.md`](docs/dough-variations-research.md).
+
 ## Persistence
 
-Everything lives in the browser's localStorage: presets, the bulk table, the current plan,
-saved plans and the half-gram-salt preference. The Presets page has JSON export and import
-to move between devices or back up. There is no server-side state.
+Everything lives in the browser's localStorage, under `sourdough.v1.`: `presets`, `doughs`,
+`plan` (the current one), `bulkTable`, `savedPlans` and `ui` (the half-gram-salt preference),
+and `seeded`, the default preset and dough ids this browser has already been given. That record
+is what lets a new default reach an existing browser once while a default you deleted stays
+deleted. An old default you never edited (the 70 g roll) is brought up to date in place; edits,
+order and your own presets and doughs are left alone. Saved plans refer to presets and doughs by
+id, so editing a dough changes every plan that uses it.
+
+The Presets page has JSON export and import to move between devices or back up. An export is
+version 2 and carries the dough library; a version-1 file, from before doughs, still imports,
+with the default doughs and its presets brought up to date. There is no server-side state.
 
 ## Privacy
 
@@ -81,7 +204,7 @@ visitor IP addresses as any web host does. The footer says the same in-app.
 ```
 npm ci
 npm run dev        # vite on :5173
-npm test           # vitest: calc, timeline, storage and server tests
+npm test           # vitest: the src/lib maths, storage and the server
 npm run lint && npm run typecheck && npm run format
 npm run build && npm start   # serve dist/ from the production server on :8080
 ```
