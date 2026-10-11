@@ -3,7 +3,7 @@ import { LEAN_DOUGH_ID, type Dough, type Preset, type ProofType } from "../lib/t
 import { DEFAULT_PRESETS, clonePresets } from "../lib/presets";
 import { newId } from "../lib/ids";
 import { NumberField } from "./NumberField";
-import { DoughsCard, doughTitle, libraryColour } from "./DoughsCard";
+import { DoughsCard, doughTitle } from "./DoughsCard";
 import "./doughs.css";
 
 interface Props {
@@ -98,14 +98,7 @@ export function PresetsPage({ presets, onChange, onExport, onImport, doughs, onD
                           {p.defaultWeight} g · {p.minWeight}–{p.maxWeight} g ·{" "}
                           {p.flexPriority > 0 ? `flex ${p.flexPriority}` : "fixed"} · {p.proof}
                           {p.doughId && p.doughId !== LEAN_DOUGH_ID && (
-                            <>
-                              {" · "}
-                              <span
-                                className={`dough-tag dough-${libraryColour(p.doughId, library)}`}
-                              >
-                                {doughName(p.doughId, library)}
-                              </span>
-                            </>
+                            <> · {doughName(p.doughId, library)}</>
                           )}
                         </span>
                       </>
@@ -247,26 +240,23 @@ function PresetForm({
         </div>
         <div className="field f-dough">
           <label htmlFor={`${p.id}-dough`}>Dough</label>
-          <div className={`tagwrap dough-${libraryColour(doughId, doughs)}`}>
-            <span className="dough-tag" aria-hidden="true" />
-            <select
-              id={`${p.id}-dough`}
-              value={doughId}
-              onChange={(e) =>
-                onChange({
-                  doughId: e.target.value === LEAN_DOUGH_ID ? undefined : e.target.value,
-                })
-              }
-            >
-              <option value={LEAN_DOUGH_ID}>Main dough</option>
-              {doughs.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {doughTitle(d)}
-                </option>
-              ))}
-              {dangling && <option value={doughId}>{doughId} (not found)</option>}
-            </select>
-          </div>
+          <select
+            id={`${p.id}-dough`}
+            value={doughId}
+            onChange={(e) =>
+              onChange({
+                doughId: e.target.value === LEAN_DOUGH_ID ? undefined : e.target.value,
+              })
+            }
+          >
+            <option value={LEAN_DOUGH_ID}>Main dough</option>
+            {doughs.map((d) => (
+              <option key={d.id} value={d.id}>
+                {doughTitle(d)}
+              </option>
+            ))}
+            {dangling && <option value={doughId}>{doughId} (not found)</option>}
+          </select>
           <div className="hint">
             {dangling
               ? "Not in the library: items plan on the main dough."

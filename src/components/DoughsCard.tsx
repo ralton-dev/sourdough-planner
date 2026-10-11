@@ -146,16 +146,6 @@ export function doughTitle(d: Pick<Dough, "icon" | "name">): string {
   return d.icon ? `${d.icon} ${d.name}` : d.name;
 }
 
-/**
- * Decision 26 on the Presets page: a library dough's colour, for its `dough-N` class, by its place
- * in the library (1 to 5, wrapping after five). The main dough, or an id the library does not
- * hold, is 0 (neutral). The plan's cards count only the doughs a plan uses, so the two can differ.
- */
-export function libraryColour(id: string | undefined, library: Dough[]): number {
-  const i = id && id !== LEAN_DOUGH_ID ? library.findIndex((d) => d.id === id) : -1;
-  return i < 0 ? 0 : (i % 5) + 1;
-}
-
 const enrichmentLabel = (kind: EnrichmentKind) => ENRICHMENTS[kind]?.label ?? kind;
 const sweetenerLabel = (kind: SweetKind) => SWEETENERS[kind]?.label ?? kind;
 const inclusionLabel = (kind: InclusionKind) => INCLUSIONS[kind]?.label ?? kind;
@@ -402,7 +392,7 @@ export function DoughsCard({ doughs, presets, onChange }: Props) {
         {list.map((d, i) => {
           const isOpen = open === d.id;
           return (
-            <div className={`preset-card dough-${libraryColour(d.id, list)}`} key={d.id}>
+            <div className="preset-card" key={d.id}>
               <header>
                 <button
                   type="button"
@@ -410,7 +400,7 @@ export function DoughsCard({ doughs, presets, onChange }: Props) {
                   onClick={() => setOpen(isOpen ? null : d.id)}
                   aria-expanded={isOpen}
                 >
-                  <strong className="dough-tag">{doughTitle(d)}</strong>{" "}
+                  <strong>{doughTitle(d)}</strong>{" "}
                   <span className="badge neutral">
                     {effectiveMethod(d) === "split" ? "split" : "separate mix"}
                   </span>
@@ -567,15 +557,12 @@ function DoughForm({
         <div className="basics">
           <div className="field f-name">
             <label htmlFor={`${id}-name`}>Name</label>
-            <div className="tagwrap">
-              <span className="dough-tag" aria-hidden="true" />
-              <input
-                id={`${id}-name`}
-                type="text"
-                value={d.name}
-                onChange={(e) => set({ name: e.target.value })}
-              />
-            </div>
+            <input
+              id={`${id}-name`}
+              type="text"
+              value={d.name}
+              onChange={(e) => set({ name: e.target.value })}
+            />
           </div>
           <div className="field f-icon">
             <label htmlFor={`${id}-icon`}>Icon</label>
