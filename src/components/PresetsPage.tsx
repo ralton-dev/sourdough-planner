@@ -10,13 +10,9 @@ interface Props {
   onChange: (next: Preset[]) => void;
   onExport: () => void;
   onImport: (text: string) => void;
-  /**
-   * The dough library and its setter. Optional until WP-H passes them (decision 21): without both,
-   * the page shows no dough anywhere (no Doughs card, no Dough select, nothing added to a summary)
-   * and renders exactly as it did before doughs existed.
-   */
-  doughs?: Dough[];
-  onDoughs?: (next: Dough[]) => void;
+  /** The dough library and its setter, for the Doughs card and each preset's Dough select. */
+  doughs: Dough[];
+  onDoughs: (next: Dough[]) => void;
 }
 
 const blank = (): Preset => ({
@@ -36,9 +32,8 @@ const blank = (): Preset => ({
 export function PresetsPage({ presets, onChange, onExport, onImport, doughs, onDoughs }: Props) {
   const [open, setOpen] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  // Decision 21: the library once the app passes it; WP-H makes the props required and drops the
-  // undefined case. The lean dough is the Batch settings, never a library entry (decision 1).
-  const library = doughs && onDoughs ? doughs.filter((d) => d.id !== LEAN_DOUGH_ID) : undefined;
+  // The lean dough is the Batch settings, never a library entry (decision 1).
+  const library = doughs.filter((d) => d.id !== LEAN_DOUGH_ID);
 
   const update = (id: string, patch: Partial<Preset>) =>
     onChange(presets.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -97,7 +92,7 @@ export function PresetsPage({ presets, onChange, onExport, onImport, doughs, onD
                   <span className="muted small">
                     {p.defaultWeight} g · {p.minWeight}–{p.maxWeight} g ·{" "}
                     {p.flexPriority > 0 ? `flex ${p.flexPriority}` : "fixed"} · {p.proof}
-                    {library && p.doughId && p.doughId !== LEAN_DOUGH_ID && (
+                    {p.doughId && p.doughId !== LEAN_DOUGH_ID && (
                       <> · {doughName(p.doughId, library)}</>
                     )}
                   </span>
@@ -139,13 +134,13 @@ export function PresetsPage({ presets, onChange, onExport, onImport, doughs, onD
         </div>
       </section>
 
-      {library && onDoughs && <DoughsCard doughs={library} presets={presets} onChange={onDoughs} />}
+      <DoughsCard doughs={library} presets={presets} onChange={onDoughs} />
 
       <section className="card">
         <header>
           <h2>Backup</h2>
           <span className="sub">
-            Presets, {library && "doughs, "}bulk table, saved plans and the current plan as JSON.
+            Presets, doughs, bulk table, saved plans and the current plan as JSON.
           </span>
         </header>
         <div className="row">
@@ -199,12 +194,12 @@ function PresetForm({
   onChange,
 }: {
   preset: Preset;
-  /** The dough library; undefined until the app passes it, and then there is no Dough select. */
-  doughs?: Dough[];
+  /** The dough library, lean excluded: the select lists the main dough first, then these. */
+  doughs: Dough[];
   onChange: (patch: Partial<Preset>) => void;
 }) {
   const doughId = p.doughId || LEAN_DOUGH_ID;
-  const dough = doughs?.find((d) => d.id === doughId);
+  const dough = doughs.find((d) => d.id === doughId);
   const dangling = doughId !== LEAN_DOUGH_ID && !dough;
   const override = dough && bakeOverride(dough);
   return (
@@ -229,33 +224,31 @@ function PresetForm({
             onChange={(e) => onChange({ icon: e.target.value })}
           />
         </div>
-        {doughs && (
-          <div className="field">
-            <label htmlFor={`${p.id}-dough`}>Dough</label>
-            <select
-              id={`${p.id}-dough`}
-              value={doughId}
-              onChange={(e) =>
-                onChange({
-                  doughId: e.target.value === LEAN_DOUGH_ID ? undefined : e.target.value,
-                })
-              }
-            >
-              <option value={LEAN_DOUGH_ID}>Main dough</option>
-              {doughs.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {doughTitle(d)}
-                </option>
-              ))}
-              {dangling && <option value={doughId}>{doughId} (not found)</option>}
-            </select>
-            <div className="hint">
-              {dangling
-                ? "Not in the library: items plan on the main dough."
-                : "Unless an item picks another."}
-            </div>
+        <div className="field">
+          <label htmlFor={`${p.id}-dough`}>Dough</label>
+          <select
+            id={`${p.id}-dough`}
+            value={doughId}
+            onChange={(e) =>
+              onChange({
+                doughId: e.target.value === LEAN_DOUGH_ID ? undefined : e.target.value,
+              })
+            }
+          >
+            <option value={LEAN_DOUGH_ID}>Main dough</option>
+            {doughs.map((d) => (
+              <option key={d.id} value={d.id}>
+                {doughTitle(d)}
+              </option>
+            ))}
+            {dangling && <option value={doughId}>{doughId} (not found)</option>}
+          </select>
+          <div className="hint">
+            {dangling
+              ? "Not in the library: items plan on the main dough."
+              : "Unless an item picks another."}
           </div>
-        )}
+        </div>
         <NumberField
           label="Default weight"
           value={p.defaultWeight}

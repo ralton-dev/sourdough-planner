@@ -1,16 +1,29 @@
 import { useState } from "react";
-import type { Plan } from "../lib/types";
+import type { Plan, Preset } from "../lib/types";
 import type { SavedPlan } from "../lib/storage";
+import { resolveDoughId } from "../lib/doughs";
 import { newId } from "../lib/ids";
 
 interface Props {
   plan: Plan;
+  /** The preset library: an item's dough is its own, else its preset's (decision 2). */
+  presets: Preset[];
   saved: SavedPlan[];
   onSaved: (list: SavedPlan[]) => void;
   onLoad: (plan: Plan) => void;
 }
 
-export function SavedPlans({ plan, saved, onSaved, onLoad }: Props) {
+/** " · 2 doughs" when a plan's pieces come from several doughs, each resolved as calc does. */
+function doughsNote(plan: Plan, presets: Preset[]): string {
+  const ids = new Set<string>();
+  for (const sel of plan.items) {
+    const p = presets.find((x) => x.id === sel.presetId);
+    if (p && sel.count > 0) ids.add(resolveDoughId(sel, p));
+  }
+  return ids.size > 1 ? ` · ${ids.size} doughs` : "";
+}
+
+export function SavedPlans({ plan, presets, saved, onSaved, onLoad }: Props) {
   const [name, setName] = useState(plan.name ?? "");
   const save = () => {
     const n = name.trim() || `Bake ${new Date().toLocaleDateString()}`;
@@ -51,8 +64,8 @@ export function SavedPlans({ plan, saved, onSaved, onLoad }: Props) {
                   {s.plan.mode === "starter"
                     ? `${s.plan.starterWeight ?? 0} g starter`
                     : "from items"}{" "}
-                  · {s.plan.items.reduce((n, i) => n + i.count, 0)} pieces · saved{" "}
-                  {new Date(s.savedAt).toLocaleDateString()}
+                  · {s.plan.items.reduce((n, i) => n + i.count, 0)} pieces
+                  {doughsNote(s.plan, presets)} · saved {new Date(s.savedAt).toLocaleDateString()}
                 </div>
               </div>
               <div className="row">

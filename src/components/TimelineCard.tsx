@@ -16,12 +16,8 @@ interface Props {
   bulkTable: BulkRow[];
   onPlan: (next: Plan) => void;
   onBulkTable: (rows: BulkRow[]) => void;
-  /**
-   * The starter the whole plan needs, summed over its mixes (`result.starter`), for the feed
-   * helper. Optional until WP-H wires it (decision 21); without it the helper knows the starter
-   * only in starter mode, where the plan holds it.
-   */
-  starterTotal?: number;
+  /** The starter the whole plan needs, summed over its mixes (`result.starter`): feed for it. */
+  starterTotal: number;
 }
 
 /** "Main dough" for the base track, as its mix is labelled; any other dough by its own name. */
@@ -300,13 +296,7 @@ export function TimelineCard({
         <FeedHelper
           readyBy={feedStep.end}
           hours={feedStep.minutes / 60}
-          targetGrams={
-            starterTotal !== undefined
-              ? Math.round(starterTotal)
-              : plan.mode === "starter"
-                ? (plan.starterWeight ?? 0)
-                : undefined
-          }
+          targetGrams={Math.round(starterTotal)}
         />
       )}
 

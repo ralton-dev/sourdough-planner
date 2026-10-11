@@ -13,8 +13,8 @@ import { NumberField } from "./NumberField";
 interface Props {
   plan: Plan;
   presets: Preset[];
-  /** The dough library. Optional until WP-H wires it (decision 21): empty, every line is lean. */
-  doughs?: Dough[];
+  /** The dough library; the lean dough is never in it (decision 1). */
+  doughs: Dough[];
   onChange: (next: Plan) => void;
 }
 
@@ -30,7 +30,7 @@ type Row =
   | { it: ItemSelection; p?: undefined }
   | { it: ItemSelection; p: Preset; doughId: string; dough: Dough | undefined };
 
-export function ItemsCard({ plan, presets, doughs = [], onChange }: Props) {
+export function ItemsCard({ plan, presets, doughs, onChange }: Props) {
   const [adding, setAdding] = useState("");
   const uid = useId();
   const setItems = (items: ItemSelection[]) => onChange({ ...plan, items });

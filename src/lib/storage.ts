@@ -292,7 +292,7 @@ export interface ExportBundle {
   version: 1 | 2;
   exportedAt: string;
   presets: Preset[];
-  /** Version 2. Optional until WP-H passes the app's library (decision 21). */
+  /** Version 2, always written; absent from a version-1 file, which imports with the defaults. */
   doughs?: Dough[];
   bulkTable: BulkRow[];
   savedPlans: SavedPlan[];
@@ -302,14 +302,17 @@ export interface ExportBundle {
 /** What an import yields, whatever its version: always with a dough library. */
 export type ImportedBundle = ExportBundle & { doughs: Dough[] };
 
-export function exportBundle(data: Omit<ExportBundle, "app" | "version" | "exportedAt">): string {
+/** A version-2 bundle of everything the app keeps, the dough library included (decision 16). */
+export function exportBundle(
+  data: Omit<ExportBundle, "app" | "version" | "exportedAt" | "doughs"> & { doughs: Dough[] },
+): string {
   const { doughs, ...rest } = data;
   const bundle: ExportBundle = {
     app: "sourdough-planner",
     version: 2,
     exportedAt: new Date().toISOString(),
     ...rest,
-    ...(doughs && { doughs: withoutLean(doughs) }),
+    doughs: withoutLean(doughs),
   };
   return JSON.stringify(bundle, null, 2);
 }

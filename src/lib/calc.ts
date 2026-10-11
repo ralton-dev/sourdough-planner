@@ -426,7 +426,7 @@ function shareFlour(
 }
 
 /** The whole plan, in one pure call (§4). `doughs` is the dough library. */
-export function computePlan(plan: Plan, presets: Preset[], doughs: Dough[] = []): BatchResult {
+export function computePlan(plan: Plan, presets: Preset[], doughs: Dough[]): BatchResult {
   const s = plan.settings;
   const ctx: LineContext = {
     settings: s,

@@ -6,7 +6,8 @@ import { NumberField } from "./NumberField";
 interface Props {
   readyBy: Date;
   hours: number;
-  targetGrams?: number;
+  /** The starter the plan needs, whole grams; 0 when it needs none yet. */
+  targetGrams: number;
 }
 
 const RATIOS: Record<string, [number, number, number]> = {
@@ -16,10 +17,22 @@ const RATIOS: Record<string, [number, number, number]> = {
   "1:5:5": [1, 5, 5],
 };
 
+/** What to feed for: the starter the plan needs plus 30 g to keep back; 300 g if it needs none. */
+const feedFor = (grams: number) => (grams ? grams + 30 : 300);
+
 /** How much to feed to have the starter the plan needs, and when. */
 export function FeedHelper({ readyBy, hours, targetGrams }: Props) {
-  const [target, setTarget] = useState<number>(targetGrams ? targetGrams + 30 : 300);
+  const [target, setTarget] = useState<number>(feedFor(targetGrams));
+  const [seen, setSeen] = useState(targetGrams);
   const [ratio, setRatio] = useState("1:2:2");
+
+  // Follow the plan when the starter it needs changes (another item, another dough), as
+  // NumberField follows its value; a figure the baker typed is theirs and stays.
+  if (targetGrams !== seen) {
+    setSeen(targetGrams);
+    if (target === feedFor(seen)) setTarget(feedFor(targetGrams));
+  }
+
   const f = feedPlan(target, RATIOS[ratio] ?? [1, 1, 1]);
   return (
     <div className="callout info stack no-print" style={{ marginBottom: 10 }}>

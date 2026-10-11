@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { computePlan } from "./lib/calc";
 import { buildTimeline, type BulkRow } from "./lib/timeline";
-import type { Plan, Preset } from "./lib/types";
+import type { Dough, Plan, Preset } from "./lib/types";
 import {
   DEFAULT_UI,
   KEYS,
@@ -16,6 +16,7 @@ import { SettingsCard } from "./components/SettingsCard";
 import { ItemsCard } from "./components/ItemsCard";
 import { IngredientsCard } from "./components/IngredientsCard";
 import { DivisionCard } from "./components/DivisionCard";
+import { NotesCard } from "./components/NotesCard";
 import { TimelineCard } from "./components/TimelineCard";
 import { SavedPlans } from "./components/SavedPlans";
 import { PresetsPage } from "./components/PresetsPage";
@@ -28,6 +29,7 @@ const initial = loadAll();
 
 export function App() {
   const [presets, setPresets] = useState<Preset[]>(initial.presets);
+  const [doughs, setDoughs] = useState<Dough[]>(initial.doughs);
   const [plan, setPlan] = useState<Plan>(initial.plan);
   const [bulkTable, setBulkTable] = useState<BulkRow[]>(initial.bulkTable);
   const [savedPlans, setSavedPlans] = useState<SavedPlan[]>(initial.savedPlans);
@@ -36,21 +38,23 @@ export function App() {
   const [kitchen, setKitchen] = useState(false);
 
   usePersisted(KEYS.presets, presets);
+  usePersisted(KEYS.doughs, doughs);
   usePersisted(KEYS.plan, plan);
   usePersisted(KEYS.bulkTable, bulkTable);
   usePersisted(KEYS.savedPlans, savedPlans);
   usePersisted(KEYS.ui, ui);
 
-  const result = useMemo(() => computePlan(plan, presets), [plan, presets]);
+  const result = useMemo(() => computePlan(plan, presets, doughs), [plan, presets, doughs]);
+  // The timeline reads the result rather than repeating the maths (§5), so they never disagree.
   const timeline = useMemo(
-    () => buildTimeline(plan, presets, bulkTable),
-    [plan, presets, bulkTable],
+    () => buildTimeline(plan, presets, bulkTable, doughs, result),
+    [plan, presets, bulkTable, doughs, result],
   );
 
   const closeKitchen = useCallback(() => setKitchen(false), []);
 
   const doExport = () => {
-    const text = exportBundle({ presets, bulkTable, savedPlans, plan });
+    const text = exportBundle({ presets, doughs, bulkTable, savedPlans, plan });
     const blob = new Blob([text], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -63,9 +67,12 @@ export function App() {
   const doImport = (text: string) => {
     try {
       const b = parseBundle(text);
-      if (!confirm("Replace presets, bulk table, saved plans and the current plan with this file?"))
-        return;
+      const ok = confirm(
+        "Replace presets, doughs, bulk table, saved plans and the current plan with this file?",
+      );
+      if (!ok) return;
       setPresets(b.presets);
+      setDoughs(b.doughs);
       setBulkTable(b.bulkTable);
       setSavedPlans(b.savedPlans);
       setPlan(b.plan);
@@ -110,7 +117,7 @@ export function App() {
         <div className="grid">
           <div className="grid two no-print">
             <SettingsCard plan={plan} onChange={setPlan} />
-            <ItemsCard plan={plan} presets={presets} onChange={setPlan} />
+            <ItemsCard plan={plan} presets={presets} doughs={doughs} onChange={setPlan} />
           </div>
           <div className="grid two">
             <IngredientsCard
@@ -121,6 +128,7 @@ export function App() {
             />
             <DivisionCard plan={plan} result={result} />
           </div>
+          <NotesCard plan={plan} onChange={setPlan} />
           <TimelineCard
             plan={plan}
             presets={presets}
@@ -128,13 +136,22 @@ export function App() {
             bulkTable={bulkTable}
             onPlan={setPlan}
             onBulkTable={setBulkTable}
+            starterTotal={result.starter}
           />
-          <SavedPlans plan={plan} saved={savedPlans} onSaved={setSavedPlans} onLoad={setPlan} />
+          <SavedPlans
+            plan={plan}
+            presets={presets}
+            saved={savedPlans}
+            onSaved={setSavedPlans}
+            onLoad={setPlan}
+          />
         </div>
       ) : (
         <PresetsPage
           presets={presets}
           onChange={setPresets}
+          doughs={doughs}
+          onDoughs={setDoughs}
           onExport={doExport}
           onImport={doImport}
         />

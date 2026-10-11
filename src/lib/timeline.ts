@@ -1,4 +1,3 @@
-import { computePlan } from "./calc";
 import { ENRICHMENTS, INCLUSIONS, SWEETENERS, findDough, leanDough, splitAtFor } from "./doughs";
 import { lineLabel } from "./format";
 import {
@@ -211,8 +210,8 @@ export function buildTimeline(
   plan: Plan,
   presets: Preset[],
   table: BulkRow[],
-  doughs: Dough[] = [],
-  result: BatchResult = computePlan(plan, presets, doughs),
+  doughs: Dough[],
+  result: BatchResult,
 ): Timeline {
   const ov = plan.timelineOverrides ?? {};
   const dur: Durations = (id, def) => {
