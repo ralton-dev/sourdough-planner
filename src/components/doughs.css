@@ -8,7 +8,7 @@
 /*
  * A library entry, a preset or a dough: its header is the open button (name, then its summary
  * while closed), then move up, move down and delete. On a phone the name gets the whole width and
- * the three buttons a row of their own. A dough's colour comes from the entry's dough-N class.
+ * the three buttons a row of their own. The editor shows no dough colour (decision 26).
  */
 :is(.doughs-card, .presets-card) .preset-card > header {
   display: grid;
@@ -25,13 +25,6 @@
 :is(.doughs-card, .presets-card) .entry-open .note-planner {
   font-weight: 400;
 }
-/* A dough's name at the size of the rest of the row, wrapping rather than overflowing. */
-:is(.doughs-card, .presets-card) .entry-open .dough-tag {
-  white-space: normal;
-}
-:is(.doughs-card, .presets-card) .entry-open > .dough-tag {
-  font-size: inherit;
-}
 @media (max-width: 559px) {
   :is(.doughs-card, .presets-card) .preset-card > header {
     grid-template-columns: minmax(0, 1fr);
@@ -42,21 +35,6 @@
 }
 :is(.doughs-card, .presets-card) .entry-form {
   margin-top: var(--sp-2);
-}
-
-/* A dough's dot inside a field, at its start: the dough's name, a preset's dough. */
-:is(.doughs-card, .presets-card) .tagwrap {
-  position: relative;
-}
-:is(.doughs-card, .presets-card) .tagwrap > .dough-tag {
-  position: absolute;
-  left: var(--sp-3);
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-:is(.doughs-card, .presets-card) .tagwrap > :is(input, select) {
-  padding-left: calc(var(--sp-3) + 1.2em);
 }
 
 /* A preset's dough select: wide enough for a long dough name once the form has two columns. */
@@ -281,5 +259,14 @@
   .doughs-card .inc .c-hint {
     grid-area: 2 / 4 / 3 / -1;
     align-self: center;
+  }
+}
+
+@media print {
+  /* The Presets page has no print layout: it prints nothing, as a .no-print card would, rather
+     than its forms. Its cards are the presets', the doughs' and the backup's after them. */
+  .presets-card,
+  .presets-card ~ .card {
+    display: none !important;
   }
 }

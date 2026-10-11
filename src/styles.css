@@ -382,6 +382,10 @@ textarea {
   padding-top: var(--sp-3);
   border-top: 1px solid var(--line);
 }
+/* The first of a card's sections, a step closer under the card's header row. */
+.section:first-child {
+  margin-top: var(--sp-3);
+}
 /* The heading row: icon, name, badge; then the section's figures, right-aligned (.figures). */
 .section > .head {
   display: flex;
@@ -402,10 +406,30 @@ textarea {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+/* A dough's tag heading its section, at the head's size: a long name wraps, its dot on line one,
+   and the tag has no margin of its own on the row. */
+.section > .head > .dough-tag {
+  align-items: baseline;
+  min-width: 0;
+  margin: 0;
+  white-space: normal;
+}
 .subsection {
   margin-top: var(--sp-3);
   padding-left: var(--sp-4);
   border-left: 3px solid var(--dough, var(--dough-0));
+}
+/* A sub-section's heading (a split's name, the tangzhong), body size; .where says where it is
+   from in the planner's voice. */
+.subsection > .head {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-md);
+  font-weight: 700;
+  line-height: 1.25;
+}
+.subsection > .head > .where {
+  color: var(--muted);
+  font-weight: 500;
 }
 /* The planner's explanations. */
 .note-planner {
@@ -445,12 +469,66 @@ textarea {
   border: 0.3em solid var(--dough, var(--dough-0));
   border-radius: 50%;
 }
-/* A dough's bulk running, in a gutter: a 3 px rule in its colour. */
+/*
+ * The main dough carries no dot on any card (decision 26): only the doughs a plan adds are told
+ * apart by colour. Heading its section, its tag is its name alone; in a row's tags it has no box
+ * of its own, so where a row shows dots and not names (a phone, kitchen mode) it takes no room
+ * and moves nothing, its name still read out; a tag that is only a dot is nothing at all.
+ */
+.dough-tag.dough-0::before,
+.dough-0 > .head > .dough-tag::before {
+  display: none;
+}
+.tags > .dough-tag.dough-0 {
+  display: contents;
+}
+.dough-0 > .dough-tag:empty {
+  display: none;
+}
+/* A dough's bulk running, in a gutter: a 3 px rule in its colour; .off keeps a slot whose dough
+   is not running, so each dough's rail stays in one place down the list. */
 .dough-rail {
   display: block;
   width: 0;
   min-height: 1em;
   border-left: 3px solid var(--dough, var(--dough-0));
+}
+.dough-rail.off {
+  border-left-color: transparent;
+}
+/*
+ * A run of rows whose hands-on steps clash: a bracket down the right edge of each row, its ends
+ * turned in on the first (.from) and the last (.to). --row-pad is the rows' block padding, so the
+ * ends meet the text rather than the rules between rows.
+ */
+.bracket {
+  position: relative;
+}
+.bracket::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: -1px;
+  right: 0;
+  width: var(--sp-1);
+  border-right: 2px solid var(--warn-ink);
+}
+.bracket.from::after {
+  top: var(--row-pad, 0px);
+  border-top: 2px solid var(--warn-ink);
+}
+.bracket.to::after {
+  bottom: var(--row-pad, 0px);
+  border-bottom: 2px solid var(--warn-ink);
+}
+/* Read out but not shown: a name a row shows elsewhere, as a phone's names line does. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 /* dough-0 is the main dough: it resets a colour inherited from an enclosing dough. */
 .dough-0 {
@@ -487,27 +565,15 @@ textarea {
 }
 .ingredients td.v {
   text-align: right;
-  font-size: 1.5rem;
+  font-size: var(--num-md);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-.ingredients tr.total td {
-  border-top: 2px solid var(--ink);
-  border-bottom: 0;
 }
 .ingredients tr.checkrow td {
   font-size: var(--fs-sm);
   color: var(--muted);
   padding-top: 6px;
-}
-/* One mixing bowl in the ingredients card (WP-F): its heading, tangzhong, table and notes. */
-.mix-block + .mix-block {
-  margin-top: 18px;
-}
-/* A split dough's block under the main dough it comes out of (WP-F). */
-.split-block {
-  margin-top: 14px;
 }
 .ok {
   color: var(--ok);
@@ -516,11 +582,10 @@ textarea {
   color: var(--danger);
 }
 
-/* division */
+/* division: the pieces' columns are the Division card's (division.css) and kitchen mode's. */
 .pieces {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
 }
 .piece {
   background: var(--card-2);
@@ -536,11 +601,9 @@ textarea {
   gap: 6px;
   align-items: center;
 }
-/* The count on one line, "g" included; in a narrow piece (two columns under ~1000 px) it shrinks
-   to fit rather than spill out. Kitchen mode and print set their own sizes. */
+/* The count on one line, "g" included; its size is the Division card's (division.css), kitchen
+   mode's and print's. */
 .piece .big {
-  font-size: 2.2rem;
-  font-size: min(2.2rem, 20.5cqi);
   font-weight: 800;
   line-height: 1.05;
   font-variant-numeric: tabular-nums;
@@ -558,13 +621,7 @@ textarea {
 .piece.bad {
   border-color: var(--danger);
 }
-/* One dough's pieces under its heading (WP-F); the print rule keeps the heading with them. */
-.piece-group + .piece-group {
-  margin-top: 14px;
-}
-.piece-group > h3 {
-  margin-bottom: 6px;
-}
+/* A word or two in a pill, never broken across lines. */
 .badge {
   display: inline-block;
   font-size: var(--fs-xs);
@@ -575,14 +632,16 @@ textarea {
   color: var(--accent-ink);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  white-space: nowrap;
 }
 .badge.neutral {
   background: var(--line);
   color: var(--ink);
 }
+/* --card on --danger is 6.4:1 in light and 6.5:1 in dark, where #fff is 2.4:1 in dark. */
 .badge.bad {
   background: var(--danger);
-  color: #fff;
+  color: var(--card);
 }
 
 .callout {
@@ -599,20 +658,13 @@ textarea {
   color: var(--info-ink);
 }
 
-/* items */
+/* items: a row's columns are the Items card's (items.css). */
 .item-row {
   display: grid;
-  grid-template-columns: 1fr auto;
   gap: 8px 10px;
   align-items: center;
   padding: 10px 0;
   border-bottom: 1px solid var(--line);
-}
-.item-row:last-of-type {
-  border-bottom: 0;
-}
-.item-row > div:first-child {
-  min-width: 0;
 }
 .item-row .title {
   font-weight: 600;
@@ -657,7 +709,6 @@ textarea {
   max-width: 100%;
   min-height: 44px;
   padding: 6px 10px;
-  margin-top: 6px;
 }
 
 /* timeline */
@@ -796,11 +847,6 @@ textarea {
 .track .folds span {
   background: var(--card);
 }
-/* Notes as written, line breaks kept: the plan's in kitchen mode, a dough's under its mix (WP-F). */
-.plan-notes {
-  white-space: pre-wrap;
-  margin-top: 6px;
-}
 /* The Notes card's box: three lines when empty, growing with what is written (WP-F keeps its
    script for browsers without field-sizing). */
 .notes-input {
@@ -850,29 +896,9 @@ details[open] > summary::before {
   padding: 12px;
   background: var(--card-2);
 }
-.preset-card header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
 .preset-card .actions {
   display: flex;
   gap: 4px;
-}
-/* The doughs editor (WP-E). A titled part of the dough form, ruled off from the part above it. */
-.dough-section {
-  border-top: 1px solid var(--line);
-  padding-top: 12px;
-}
-/* One enrichment, sweetness or add-in: a box of its own inside the form. */
-.dough-row {
-  gap: 6px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 10px;
 }
 /* A fieldset that only groups (and disables) its fields: no frame of its own. */
 .fieldset-reset {
@@ -885,7 +911,7 @@ details[open] > summary::before {
   opacity: 0.55;
 }
 
-/* kitchen mode */
+/* Kitchen mode's overlay; what is inside it is kitchen.css's. */
 .kitchen {
   position: fixed;
   inset: 0;
@@ -896,50 +922,8 @@ details[open] > summary::before {
   /* The content at most 820 px wide and centred; the overlay itself still covers the screen. */
   padding-inline: max(16px, calc((100% - 820px) / 2));
   z-index: 50;
-  font-size: 1.35rem;
   /* Kitchen type is one factor up (§5): every size set through the tokens follows. */
   --scale: 1.3;
-}
-.kitchen h1 {
-  font-size: 1.8rem;
-}
-.kitchen h2 {
-  font-size: 1.4rem;
-  margin: 22px 0 8px;
-}
-/* A heading inside a kitchen section (a piece group's): between h2 and the body text. */
-.kitchen h3 {
-  font-size: 1.2rem;
-  margin: 16px 0 6px;
-}
-.kitchen .plan-notes {
-  margin-top: 4px;
-}
-.kitchen .ingredients td.v {
-  font-size: 2.4rem;
-}
-.kitchen .pieces {
-  grid-template-columns: 1fr;
-}
-.kitchen .piece .big {
-  font-size: 3rem;
-}
-.kitchen .step {
-  grid-template-columns: 90px minmax(0, 1fr);
-  font-size: 1.3rem;
-}
-.kitchen .step .note {
-  font-size: 1rem;
-}
-.kitchen .close {
-  position: sticky;
-  top: 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: var(--bg);
-  padding: 6px 0 10px;
-  z-index: 1;
 }
 
 .footer {
@@ -1010,10 +994,13 @@ details[open] > summary::before {
     --dough-4: #6b4fb3;
     --dough-5: #5a6811;
   }
-  /* Print type is one factor down (§5), as kitchen mode's is one up. */
+  /* Print type is one factor down (§5), as kitchen mode's is one up, except the smallest size:
+     badges and pills keep their screen size, 0.78rem (8.6 pt), as 0.9 of it is 7.7 pt, too
+     small to read on paper in capitals. */
   :root,
   .kitchen {
     --scale: 0.9;
+    --fs-xs: 0.78rem;
   }
   html,
   body {
@@ -1059,14 +1046,10 @@ details[open] > summary::before {
     break-inside: auto;
     page-break-inside: auto;
   }
-  /* A mix keeps its splits with it when it fits; when it does not, each of its parts stays whole. */
+  /* The atomic units: a step (an In order row is one), a lane, a track, a piece, a callout. */
   .step,
   .lane,
   .track,
-  .mix-block,
-  .mix-block > *,
-  .split-block,
-  .piece-group,
   .piece,
   .callout,
   .window,
@@ -1090,14 +1073,31 @@ details[open] > summary::before {
     break-after: avoid;
     page-break-after: avoid;
   }
-  /* Lane and track headings, and a piece group's: never the last line on a page. */
+  /* A sub-section's heading starts at its top edge, and an emoji in it reaches above the line:
+     when the sub-section starts a page, Chrome prints that sliver at the foot of the page before.
+     Part of the space above it moves inside, so the heading has room. */
+  .subsection {
+    margin-top: var(--sp-2);
+    padding-top: var(--sp-1);
+  }
+  /* Lane and track headings: never the last line on a page. */
   h3,
   .track .reason {
     break-after: avoid;
     page-break-after: avoid;
   }
+  /* Badges print as ink in an outline: a background does not print, and a fill would only be a
+     tint on paper. The border takes a pixel of the padding, so a badge keeps its size. */
+  .badge,
+  .badge.neutral,
+  .badge.bad {
+    background: none;
+    color: var(--ink);
+    border: 1px solid currentColor;
+    padding: 1px 6px;
+  }
   /* Block flow, not flex: Firefox breaks a page between rows of inline blocks but not inside a
-     flex container. Four to a row, a lone piece a quarter wide, every piece whole. */
+     flex container. Four to a row (a lone piece takes the row: division.css), every piece whole. */
   .pieces {
     display: block;
   }
@@ -1110,9 +1110,10 @@ details[open] > summary::before {
   .piece:nth-child(4n) {
     margin-right: 0;
   }
+  /* The piece-count size, scaled for print, shrinking to fit a narrow piece as on screen. */
   .piece .big {
-    font-size: 1.7rem;
-    white-space: nowrap;
+    font-size: var(--num-lg);
+    font-size: min(var(--num-lg), 20.5cqi);
   }
   /* Fields print as their values; a textarea (the Notes card) prints as plain text. */
   input,

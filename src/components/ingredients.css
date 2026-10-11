@@ -74,3 +74,29 @@
 .ingredient-mixes .ingredients tr.with-add-ins td.v {
   font-size: var(--num-sm);
 }
+
+@media print {
+  /*
+   * A section with splits may break, but only before a split: the mix (what goes into one bowl,
+   * its lines and notes) and each split stay whole, so a section taller than the space left starts
+   * where it is rather than leave the page under it empty. A section with no split stays whole
+   * (styles.css): Firefox ignores break-after: avoid, so letting it break could leave its heading
+   * row alone at the foot of a page.
+   */
+  .ingredient-mixes .section:has(> .subsection) {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+  .ingredient-mixes .section > .mix {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  /* Weighed lines a little closer than on screen, so a plan's first page holds more of it; a
+     note under a line's name keeps clear of the rule below (Firefox sets it on the rule). */
+  .ingredient-mixes .ingredients td {
+    padding-block: var(--sp-1);
+  }
+  .ingredient-mixes .ingredients td > :is(.note-planner, .note-own) {
+    margin-bottom: var(--sp-1);
+  }
+}
