@@ -60,7 +60,12 @@ by default). New:
 29. **Per-card CSS.** `styles.css` holds tokens and shared primitives only. Each card owns its own
     file (`ingredients.css`, `division.css`, `items.css`, `timeline.css`, `doughs.css`,
     `kitchen.css` under `src/components/`), imported at the top of its component, print block
-    included. After wave 1 nobody edits `styles.css` except R7, and only its print block.
+    included. After wave 1 nobody edits `styles.css` except R7. A wave-2 package that supersedes a
+    `styles.css` rule (`.mix-block`, `.track`, `.piece-group`, …) cannot delete it (decision 22
+    meets decision 29): it lists the rule in its hand-back and R7 deletes it in wave 3. Card
+    stylesheets load before `styles.css` (`main.tsx` imports it last), so a card rule wins a tie
+    only by specificity: scope every card rule under the card's root class, and leave the order
+    alone, since it lets `styles.css`'s print protections win ties against card screen rules.
 30. **Three levels and four roles.** A card is sections; a section opens with a heading row on a
     top rule with its figures on that row; a split is a sub-section indented behind a rule in its
     dough colour; notes are one of two roles: the planner's explanations (muted, `--fs-sm`) and the
@@ -103,8 +108,10 @@ export interface TimelineRow {
   note?: string;
   /** Every dough on the row, track order; colour 0 is the main dough (decision 26). */
   doughs: { doughId: string; name: string; icon?: string; colour: number }[];
-  /** Ids of hands-on rows (a step with minutes > 0 that is not a bulk and not fixed) whose span
-   *  intersects this row's, excluding itself. Empty for most rows. */
+  /** Ids of other hands-on spans that intersect this row's span, and only on hands-on rows:
+   *  mix, split, divide, shape and the tangzhong cook. Bulks (fixed or not), feeds, autolyse,
+   *  proofs, bench rests and bakes are not hands-on, and folds are moments, so none of those
+   *  carry or cause an overlap. Empty for most rows. */
   overlaps: string[];
   /** Doughs whose bulk is running at this row's start, for the gutter rails. */
   rails: string[];
@@ -113,7 +120,9 @@ export interface TimelineRows {
   /** false for a lean plan: one base track and nothing else (decision 24). */
   multi: boolean;
   rows: TimelineRow[];
-  /** When `lanes` was asked for: shape/proof/bake rows tagged by `lane.label`, merged in. */
+  /** When `lanes` was asked for: shape/proof/bake rows merged in; a lane row's tag carries
+   *  `name: lane.label` ("Loaf (Jalapeño cheddar)"), `doughId: lane.doughId` and that dough's
+   *  colour, so two lanes shaping at the same minute merge into one row with two tags. */
 }
 export function timelineRows(timeline: Timeline, opts?: { lanes?: boolean }): TimelineRows;
 ```
@@ -141,9 +150,9 @@ the split overlap in time but the bulk is not hands-on. With lanes: `shape:loaf@
 `jalapeno-cheddar`, `roll` ×6 at 120 on `soft-bun`, `loaf` ×1 at 800 on `soft-sandwich`; REF
 settings; start 06:00; `feedStarter` and `autolyse` on; hand mixed): `feed` 06:00–12:00 ·
 `autolyse` 12:00–12:45 · `mix` 12:45–12:55 [main] · `bulk` 12:55–17:55 [main] · `mix@soft-bun`
-12:55–13:15 · `bulk@soft-bun` 13:15–18:15 · `mix@soft-sandwich` 13:15–13:35 · `fold:1@lean` 13:25 ·
-`split@jalapeno-cheddar` 13:25–13:35 · `bulk@jalapeno-cheddar` 13:35–17:55 · `bulk@soft-sandwich`
-13:35–18:35 · `fold:1@soft-bun` 13:45 · `fold:2@lean+fold:2@jalapeno-cheddar` 13:55 (one row, two
+12:55–13:15 · `bulk@soft-bun` 13:15–18:15 · `mix@soft-sandwich` 13:15–13:35 · `split@jalapeno-cheddar` 13:25–13:35 · `fold:1@lean` 13:25
+(a fold sorts after a step starting at the same minute) · `bulk@soft-sandwich` 13:35–18:35 ·
+`bulk@jalapeno-cheddar` 13:35–17:55 (track order: separate doughs precede the split in `tracks`) · `fold:1@soft-bun` 13:45 · `fold:2@lean+fold:2@jalapeno-cheddar` 13:55 (one row, two
 doughs) · … · `divide+divide@jalapeno-cheddar` 17:55 (one row, two doughs) · `bench+bench@…` 18:10 ·
 `divide@soft-bun` 18:15 · `bench@soft-bun` 18:30 · `divide@soft-sandwich` 18:35 · `bench@…` 18:50.
 `mix@soft-sandwich` and `split@jalapeno-cheddar` list each other in `overlaps`. The pin computes
@@ -168,7 +177,7 @@ the times above are what it must find (verify with a node script, do not hand-ty
   (the `DivisionCard.tsx:44` rank), the autolyse box only when there is a main mix
   (`TimelineCard.tsx:289-297`), and the bulk guide hung off each track as now.
 - **Step rows** on a phone: the note column gets `min-width: 0` and the duration box shrinks to
-  its digits (R1's shared `.step` change); lanes use `auto-fit, minmax(300px, 1fr)` (R1).
+  its digits (R1's shared `.step` change); lanes use `auto-fit, minmax(min(280px, 100%), 1fr)` (R1).
 - **Kitchen mode** (R5) renders `timelineRows(timeline, { lanes: true })` only, read-only, with
   the same tags and rails, `h3` headings, reasons at note size, and `max-width` from R1.
 
@@ -197,7 +206,8 @@ right-aligned on the row), `.subsection` (indent `--sp-4`, left rule 3 px in `va
 The five small sizes collapse onto `--fs-xs`/`--fs-sm`; `.small` becomes `--fs-sm`.
 
 Also in R1, the quick wins the review lists for `styles.css`: `.grid.two { align-items: start }`
-(:168-177), lanes `auto-fit, minmax(300px, 1fr)` (:598), `.kitchen` max width 820 px (:735),
+(:168-177), lanes `auto-fit, minmax(min(280px, 100%), 1fr)` (:598; three lanes still fit a 914 px card), `.kitchen`
+max width 820 px (:735),
 `.step` note column `min-width: 0` and a 3.2em duration box (:518-559), the light palette
 re-declared inside `@media print` (:830) so a dark screen prints dark ink.
 
@@ -397,7 +407,9 @@ page 1 is more than two-thirds used; `scripts/screens/` runs from a clean checko
 `npm ci` only.
 
 Owns: `scripts/screens/` (new), the `@media print` blocks of `ingredients.css`, `division.css`,
-`items.css`, `timeline.css`, `doughs.css` and `src/styles.css`, `ORCHESTRATION.md`. Size **S**.
+`items.css`, `timeline.css`, `doughs.css`, and `src/styles.css` whole (its print block, and the
+deletion of the screen rules wave 2 reported as superseded; badges print as ink with an outline;
+decide the print scale for badges), `ORCHESTRATION.md`. Size **S**.
 Depends: R2, R3, R4, R6. Runs with R5 only (R5 owns `kitchen.css` whole; R7 does not touch it).
 
 ---
