@@ -625,6 +625,15 @@ describe("§5 multi-dough timeline", () => {
     expect(stepOf(t, "mix@soft-sandwich")?.note).toMatch(
       /^Cooled tangzhong in with the milk and water, then/,
     );
+    // No milk covers nothing, even a paste that wants no liquid: it reads water, as calc has it.
+    const dry = editDough("buttered", {
+      method: "separate",
+      tangzhong: { flourPct: 0.05, ratio: 0 },
+    });
+    expect(
+      refTimeline({ items: [{ presetId: "loaf", count: 1, doughId: "buttered" }] }, dry).steps[0]
+        ?.note,
+    ).toMatch(/ water, stirring/);
     // A forced split cannot hold a tangzhong: no step for it.
     const forced = editDough("jalapeno-cheddar", { tangzhong: { flourPct: 0.05, ratio: 5 } });
     expect(refTimeline({ items: EXAMPLE_A }, forced).steps.map((s) => s.id)).toEqual(["mix"]);

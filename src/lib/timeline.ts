@@ -546,7 +546,7 @@ function doughGrams(d: Dough, flour: number, s: Settings): DoughGrams {
     // One liquid, never a blend: the milk when it covers it, else the water, which is
     // clamped to what there is (§4; calc warns tangzhong-liquid-short).
     tangzhong =
-      milk >= liquid
+      milk > 0 && milk >= liquid
         ? { flour: tzFlour, liquid, kind: "milk" }
         : { flour: tzFlour, liquid: Math.min(liquid, water), kind: "water" };
   }
