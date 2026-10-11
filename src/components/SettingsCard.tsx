@@ -69,7 +69,7 @@ export function SettingsCard({ plan, onChange }: Props) {
             unit="%"
             min={50}
             max={110}
-            hint="The main dough's true hydration, starter included. Doughs mixed separately can set their own on the Presets page."
+            hint="The main dough's true hydration, starter included"
           />
           <NumberField
             label="Inoculation"
@@ -98,7 +98,7 @@ export function SettingsCard({ plan, onChange }: Props) {
             unit="%"
             min={0}
             max={5}
-            hint="The main dough's. Doughs mixed separately can set their own on the Presets page."
+            hint="The main dough's. A dough mixed separately can set its own hydration and salt on the Presets page."
           />
           <NumberField
             label="Bench loss"
