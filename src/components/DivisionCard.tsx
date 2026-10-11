@@ -5,6 +5,7 @@ import {
   type DoughResult,
   type Plan,
 } from "../lib/types";
+import { leanDough } from "../lib/doughs";
 import { fmtG, lineLabel } from "../lib/format";
 
 interface Props {
@@ -47,19 +48,6 @@ function byDough(result: BatchResult): Group[] {
 /** What the pieces on a dough weigh, finished, against what that dough holds (§4). */
 const usedOf = (lines: AllocationLine[]) => lines.reduce((n, l) => n + l.count * l.pieceEach, 0);
 
-/** React keys are line keys; a repeated key (two rows resolved to one line) gets its index. */
-function keysFor(lines: AllocationLine[]): string[] {
-  const seen = new Set<string>();
-  return lines.map((l, i) => {
-    const key = seen.has(l.key) ? `${l.key}#${i}` : l.key;
-    seen.add(key);
-    return key;
-  });
-}
-
-/** "94 g add-ins" wraps as one: a narrow piece would otherwise break it at the hyphen. */
-const NOWRAP = { whiteSpace: "nowrap" } as const;
-
 /**
  * One piece: how many at what finished weight and, when it carries add-ins, what is dough and
  * what is add-in (decision 6). The parts are rounded so they add up to the weight shown.
@@ -82,12 +70,13 @@ function Piece({ line: l, label }: { line: AllocationLine; label: string }) {
       </div>
       {l.additionsEach > 0 && addIns > 0 && (
         <div className="muted small num">
-          <span style={NOWRAP}>{dough} g dough</span> +{" "}
-          <span style={NOWRAP}>{addIns} g add-ins</span>
+          {/* Each part wraps as one: a narrow piece would break "94 g add-ins" at its hyphen. */}
+          <span className="nowrap">{dough} g dough</span> +{" "}
+          <span className="nowrap">{addIns} g add-ins</span>
           {onTop && (
             <>
               {" "}
-              <span style={NOWRAP}>= {piece} g</span>
+              <span className="nowrap">= {piece} g</span>
             </>
           )}
         </div>
@@ -98,7 +87,7 @@ function Piece({ line: l, label }: { line: AllocationLine; label: string }) {
           <>
             {" "}
             · <span className="badge">adjusted</span>{" "}
-            <span className="muted">
+            <span className="muted nowrap">
               from {Math.round(l.baseWeight)} g{onTop && " dough"}
             </span>
           </>
@@ -133,28 +122,27 @@ const METHOD: Record<DoughResult["method"], string | undefined> = {
  */
 export function Pieces({ result }: { result: BatchResult }) {
   const groups = byDough(result);
-  const piece = (l: AllocationLine, key: string) => (
-    <Piece key={key} line={l} label={l.doughId === LEAN_DOUGH_ID ? lineLabel(l) : l.name} />
+  // Line keys are unique: calc merges two rows on one key, or keys the later ones #2, #3.
+  const piece = (l: AllocationLine) => (
+    <Piece key={l.key} line={l} label={l.doughId === LEAN_DOUGH_ID ? lineLabel(l) : l.name} />
   );
   const [only] = groups;
   if (groups.length <= 1 && (!only || only.doughId === LEAN_DOUGH_ID)) {
-    const keys = keysFor(result.allocation);
-    return <div className="pieces">{result.allocation.map((l, i) => piece(l, keys[i]!))}</div>;
+    return <div className="pieces">{result.allocation.map(piece)}</div>;
   }
   return (
     <>
-      {groups.map((g, i) => {
-        // Lean is the main dough, as the other cards call it. A dough with no result (no flour) is
-        // named by its lines.
+      {groups.map((g) => {
+        // Lean is named "Main dough" by the lib, never by its first line, which may be on a dough
+        // that has gone. Any other dough without a result (no flour) is named by its lines.
         const name =
           g.doughId === LEAN_DOUGH_ID
-            ? "Main dough"
+            ? leanDough().name
             : (g.dough?.name ?? g.lines[0]?.doughName ?? "");
         const how = g.dough && METHOD[g.dough.method];
-        const keys = keysFor(g.lines);
         return (
-          <div key={g.doughId} style={{ marginTop: i > 0 ? 14 : undefined }}>
-            <h3 style={{ marginBottom: 6, breakAfter: "avoid" }}>
+          <div key={g.doughId} className="piece-group">
+            <h3>
               {g.dough?.icon && `${g.dough.icon} `}
               {name}{" "}
               <span className="muted small num" style={{ fontWeight: 400 }}>
@@ -162,7 +150,7 @@ export function Pieces({ result }: { result: BatchResult }) {
                 {fmtG(usedOf(g.lines))} of {fmtG(g.dough?.usable ?? 0)}
               </span>
             </h3>
-            <div className="pieces">{g.lines.map((l, j) => piece(l, keys[j]!))}</div>
+            <div className="pieces">{g.lines.map(piece)}</div>
           </div>
         );
       })}

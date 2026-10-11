@@ -150,12 +150,9 @@ function TangzhongBlock({ mix }: { mix: MixResult }) {
   );
 }
 
+/** A dough's notes as written, line breaks kept, under its mix or its split. */
 const Notes = ({ text }: { text?: string }) =>
-  text?.trim() ? (
-    <p className="muted small" style={{ whiteSpace: "pre-wrap", marginTop: 6 }}>
-      {text.trim()}
-    </p>
-  ) : null;
+  text?.trim() ? <p className="muted small plan-notes">{text.trim()}</p> : null;
 
 /**
  * A split dough under the main dough it comes out of: the portion to take, what is worked into it
@@ -163,7 +160,7 @@ const Notes = ({ text }: { text?: string }) =>
  */
 function SplitBlock({ dough }: { dough: DoughResult }) {
   return (
-    <div style={{ breakInside: "avoid", marginTop: 14 }}>
+    <div className="split-block">
       <h3>
         {dough.icon && `${dough.icon} `}
         {dough.name}
@@ -197,18 +194,17 @@ function MixBlock({
   mix,
   result,
   halfGramSalt,
-  first,
 }: {
   mix: MixResult;
   result: BatchResult;
   halfGramSalt: boolean;
-  first: boolean;
 }) {
   const own = mix.id === "base" ? undefined : result.doughs.find((d) => d.doughId === mix.id);
   const splits = result.doughs.filter((d) => d.method === "split" && d.mixId === mix.id);
+  // In print each child of a .mix-block stays whole: this one holds the heading with its table.
   return (
-    <div style={{ marginTop: first ? undefined : 18 }}>
-      <div style={{ breakInside: "avoid" }}>
+    <div className="mix-block">
+      <div>
         <h3>
           {own?.icon && `${own.icon} `}
           {mix.label}
@@ -254,14 +250,8 @@ export function IngredientsTable({
   }
   return (
     <>
-      {result.mixes.map((mix, i) => (
-        <MixBlock
-          key={mix.id}
-          mix={mix}
-          result={result}
-          halfGramSalt={halfGramSalt}
-          first={i === 0}
-        />
+      {result.mixes.map((mix) => (
+        <MixBlock key={mix.id} mix={mix} result={result} halfGramSalt={halfGramSalt} />
       ))}
     </>
   );
@@ -272,6 +262,8 @@ export function IngredientsCard({ plan, result, halfGramSalt, onHalfGram }: Prop
   const base = result.mixes.find((m) => m.id === "base");
   const shown = base ?? (result.mixes.length === 1 ? result.mixes[0] : undefined);
   const others = result.mixes.length > 1;
+  // Several mixes go in one after another, so the whole of the starter is out by the first.
+  const starterWhen = others ? `for the first mix (${result.mixes[0]?.label})` : "at mix time";
   return (
     <section className="card">
       <header>
@@ -285,8 +277,8 @@ export function IngredientsCard({ plan, result, halfGramSalt, onHalfGram }: Prop
       <IngredientsTable result={result} halfGramSalt={halfGramSalt} />
       {plan.mode === "items" && (
         <p className="muted small" style={{ marginTop: 8 }}>
-          Have <strong className="num">{fmtG(result.starter)}</strong> of active starter ready at
-          mix time.
+          Have <strong className="num">{fmtG(result.starter)}</strong>
+          {` of active starter ready ${starterWhen}.`}
         </p>
       )}
       {onHalfGram && (

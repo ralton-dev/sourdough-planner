@@ -39,9 +39,8 @@ export function ItemsCard({ plan, presets, doughs = [], onChange }: Props) {
   const remove = (i: number) => setItems(plan.items.filter((_, k) => k !== i));
 
   const library = doughs.filter((d) => d.id !== LEAN_DOUGH_ID);
-  // The lean dough is the batch settings: the main dough, as the other cards call it.
-  const doughName = (id: string) =>
-    id === LEAN_DOUGH_ID ? "Main dough" : (findDough(id, doughs)?.name ?? `${id} (not found)`);
+  // The lean dough is the batch settings; the lib names it "Main dough", as every card does.
+  const doughName = (id: string) => findDough(id, doughs)?.name ?? `${id} (not found)`;
   const optionLabel = (id: string) => {
     const icon = findDough(id, doughs)?.icon;
     return icon ? `${icon} ${doughName(id)}` : doughName(id);
@@ -101,13 +100,14 @@ export function ItemsCard({ plan, presets, doughs = [], onChange }: Props) {
   const showAddInsBox = rows.some((r) => r.p !== undefined && hasAddIns(r.dough));
   const hintId = `${uid}-add-ins`;
 
-  // Row keys are line keys; a second row on the same key (a preset's dough changed under it)
-  // gets its index so React keeps the two apart.
-  const seen = new Set<string>();
-  const rowKey = (key: string, i: number) => {
-    const out = seen.has(key) ? `${key}#${i}` : key;
-    seen.add(out);
-    return out;
+  // Row keys are line keys. Two rows can still reach one key (a row on its preset's own dough
+  // beside a row naming that dough): calc merges them or keys the later #2, #3, but both rows stay
+  // in the plan, so they are keyed here the way calc keys them.
+  const seen = new Map<string, number>();
+  const rowKey = (key: string) => {
+    const n = (seen.get(key) ?? 0) + 1;
+    seen.set(key, n);
+    return n === 1 ? key : `${key}#${n}`;
   };
 
   return (
@@ -124,7 +124,7 @@ export function ItemsCard({ plan, presets, doughs = [], onChange }: Props) {
       {rows.map((row, i) => {
         if (!row.p) {
           return (
-            <div className="item-row" key={rowKey(`${row.it.presetId}-${i}`, i)}>
+            <div className="item-row" key={rowKey(`${row.it.presetId}-${i}`)}>
               <div>
                 <div className="title">Unknown preset</div>
                 <div className="muted small">This preset was deleted.</div>
@@ -166,9 +166,8 @@ export function ItemsCard({ plan, presets, doughs = [], onChange }: Props) {
           );
         }
         return (
-          <div className="item-row" key={rowKey(key, i)}>
-            {/* A grid cell grows to its select's longest dough name; let it shrink on a phone. */}
-            <div style={showSelect ? { minWidth: 0 } : undefined}>
+          <div className="item-row" key={rowKey(key)}>
+            <div>
               <div className="title">
                 {p.icon} {p.name}{" "}
                 {flex ? (
@@ -186,7 +185,6 @@ export function ItemsCard({ plan, presets, doughs = [], onChange }: Props) {
                   value={doughId}
                   onChange={(e) => setDough(i, p, e.target.value)}
                   aria-label={`Dough for ${label}`}
-                  style={{ marginTop: 6 }}
                 >
                   {options.map((id) => (
                     <option key={id} value={id}>

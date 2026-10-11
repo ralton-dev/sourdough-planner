@@ -37,19 +37,20 @@ export function NotesCard({ plan, onChange }: Props) {
     onChange(next);
   };
 
+  // Printed only when there is something to read: an empty card would print as a bare heading.
   return (
-    <section className="card">
+    <section className={notes.trim() ? "card" : "card no-print"}>
       <header>
         <h2 id={id}>Notes</h2>
       </header>
       <textarea
         ref={ref}
+        className="notes-input"
         value={notes}
         onChange={(e) => set(e.target.value)}
         aria-labelledby={id}
         rows={3}
         placeholder="What you planned, changed or learned this bake"
-        style={{ fieldSizing: "content" }}
       />
     </section>
   );
