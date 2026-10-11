@@ -32,11 +32,10 @@ jobs:
       - run: npm run build
 
   # Build each architecture on its native runner and push by digest; the merge
-  # job assembles the manifest list. arm64 uses the in-cluster self-hosted
-  # runner (homelab-arm64) ONLY on push-to-main: fork PRs fire pull_request and
-  # therefore never select it, falling back to GitHub's hosted arm runner.
-  # amd64 always uses ubuntu-latest. Do not loosen this expression: the runner
-  # is privileged on a home LAN and this condition is what keeps strangers off it.
+  # job assembles the manifest list. arm64 uses the self-hosted runner ONLY on
+  # push-to-main: pull requests (including forks) never select it and fall back
+  # to GitHub's hosted arm runner. amd64 always uses ubuntu-latest. Do not
+  # loosen this expression: it is what keeps untrusted PRs off the runner.
   docker:
     name: Image (${{ matrix.platform }})
     needs: check
@@ -179,5 +178,5 @@ jobs:
             echo "ghcr.io/${{ github.repository_owner }}/sourdough-planner:${{ steps.meta.outputs.version }}"
             echo '```'
             echo
-            echo "Pin this tag in homelab-k8s (manifests/sourdough-planner) and set APP_VERSION to match."
+            echo "Pin this tag in your deployment and set APP_VERSION to match."
           } >> "$GITHUB_STEP_SUMMARY"

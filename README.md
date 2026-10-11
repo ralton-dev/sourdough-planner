@@ -126,5 +126,5 @@ CI builds `linux/amd64` and `linux/arm64` natively and pushes a manifest list to
 `ghcr.io/ralton-dev/sourdough-planner` tagged `sha-<full commit sha>` and `latest` on every
 push to `main`. The tag appears in the job summary of the _Multi-arch manifest_ job.
 
-See `docs/homelab-deployment.md` for what the homelab cluster requires of this repo and how
-each requirement is met.
+Run it wherever a container runs: pin the `sha-` tag, set `APP_VERSION` to match, and point
+the liveness and readiness probes at `/healthz` and `/readyz`.
