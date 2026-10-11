@@ -1,3 +1,4 @@
+import { ENRICHMENTS, INCLUSIONS } from "../lib/doughs";
 import {
   LEAN_DOUGH_ID,
   type AdditionLine,
@@ -5,8 +6,10 @@ import {
   type DoughResult,
   type MixResult,
   type Plan,
+  type SplitAt,
 } from "../lib/types";
 import { checkRow, fmtG, fmtPct, fmtSalt, joinAnd } from "../lib/format";
+import { doughColour } from "./DivisionCard";
 import { Warnings } from "./Warnings";
 import "./ingredients.css";
 
@@ -28,8 +31,28 @@ const ADD_AT: Record<AdditionLine["addAt"], string | undefined> = {
   split: undefined,
 };
 
+/**
+ * Where a split dough leaves the main dough (`DoughResult.splitAt`), as calc's reason words it;
+ * "at fold 1" never breaks across a line.
+ */
+const SPLIT_AT: Record<SplitAt, string> = {
+  mix: "at the end of the mix",
+  fold1: "at\u00a0fold\u00a01",
+  fold2: "at\u00a0fold\u00a02",
+};
+
+/**
+ * Holding ~20 g of water back for the salt is worth saying only when that is a tenth of the water
+ * or less: 200 g or more, on a plain mix. The timeline's mix note keeps the same rule
+ * (`RESERVE_FROM_WATER_G` and `plainMixNote` in timeline.ts), so the card and the step agree.
+ */
+const RESERVE_FROM_WATER_G = 200;
+
 const isTangzhong = (a: AdditionLine) =>
   a.kind === "tangzhong-flour" || a.kind === "tangzhong-liquid";
+
+/** Grams inside a sentence, the number and its unit kept on one line. */
+const gramsInText = (g: number) => fmtG(g).replace(" ", "\u00a0");
 
 /** Whole grams, as every other line; two decimals under a gram (a high-intensity sweetener). */
 const fmtAmount = (g: number) => (g > 0 && g < 1 ? `${g.toFixed(2)} g` : fmtG(g));
@@ -40,25 +63,36 @@ const tangzhongPart = (label: string) => {
   return rest.charAt(0).toUpperCase() + rest.slice(1);
 };
 
-/** A lean plan's one mix: shown exactly as before doughs existed, with no heading. */
-function leanOnly(result: BatchResult): boolean {
-  const [only, ...rest] = result.mixes;
-  return (
-    rest.length === 0 && only?.id === "base" && only.doughIds.every((id) => id === LEAN_DOUGH_ID)
-  );
-}
-
 /** Whether any piece is made from the main dough as it is (the rule the timeline shares). */
 const leanHasPieces = (result: BatchResult) =>
   result.allocation.some((l) => l.doughId === LEAN_DOUGH_ID && l.count > 0);
 
 /**
- * "at fold 1": where a split dough leaves the main dough. The result carries it only in its reason
- * ("Split off at fold 1: …"), which calc writes; anything else gives nothing to say.
+ * A mix keeps water back for the salt when it is plain (no enrichment line; a sweetness alone
+ * leaves it plain) and has the water. A separate mix is judged by its dough's lines, as the
+ * timeline judges it; the main mix has none.
  */
-function splitPoint(d: DoughResult): string | undefined {
-  const where = /^Split off at (.+?):/.exec(d.reason)?.[1];
-  return where ? `at ${where}` : undefined;
+function reservesWater(mix: MixResult, own: DoughResult | undefined): boolean {
+  const lines = own?.additions ?? mix.additions;
+  const enriched = lines.some((a) => a.kind in ENRICHMENTS && a.grams > 0);
+  return !enriched && mix.addedWater >= RESERVE_FROM_WATER_G;
+}
+
+/** An add-in's note is the baker's own, unless it is the planner's stock note for its kind. */
+function plannersNote(a: AdditionLine): boolean {
+  const stock: Record<string, { note?: string } | undefined> = INCLUSIONS;
+  return a.note !== undefined && a.note === stock[a.kind]?.note;
+}
+
+/**
+ * A split that takes the whole main dough, by the timeline's rule (`isWholeBase` in timeline.ts):
+ * nothing plain is made from the main dough, and the split's portion is all of it to the half
+ * gram or the split is the one dough the mix holds.
+ */
+function takesAll(d: DoughResult, mix: MixResult, leanPieces: boolean): boolean {
+  if (leanPieces) return false;
+  const only = mix.doughIds.length === 1 && mix.doughIds[0] === d.doughId;
+  return only || (d.portion ?? 0) >= mix.totalDough - 0.5;
 }
 
 /**
@@ -66,7 +100,7 @@ function splitPoint(d: DoughResult): string | undefined {
  * point said once at the end when they share it, else after each.
  */
 function splitsInWords(splits: DoughResult[], part: (d: DoughResult, i: number) => string): string {
-  const at = splits.map(splitPoint);
+  const at = splits.map((d) => (d.splitAt ? SPLIT_AT[d.splitAt] : undefined));
   const shared = at.every((x) => x === at[0]);
   const parts = splits.map((d, i) => {
     const words = part(d, i);
@@ -77,34 +111,30 @@ function splitsInWords(splits: DoughResult[], part: (d: DoughResult, i: number) 
 }
 
 /**
- * What becomes of the main dough, under its table, when not all of it is baked plain: with plain
- * pieces, what the splits take of it; without, where all of it goes and, from the starter, what is
- * left spare. Nothing to say for a main dough that only makes plain pieces.
+ * What becomes of the main dough, under its table, said only when some of it stays plain: as
+ * pieces (what its splits take of it), or as spare from the starter. When its splits take all of
+ * it, each split's own line says how much, and one split's heading says it is all of it.
  */
 function mainDoughFate(result: BatchResult, splits: DoughResult[]): string | undefined {
-  const portion = (d: DoughResult) => fmtG(d.portion ?? 0);
-  if (leanHasPieces(result)) {
-    if (splits.length === 0) return undefined;
-    const taken = splitsInWords(
-      splits,
-      (d, i) => `${portion(d)} ${i === 0 ? "goes to" : "to"} ${d.name}`,
-    );
-    return `of which ${taken}.`;
-  }
-  // No plain pieces: it is mixed for its splits. From the starter, what they leave is spare.
+  const leanPieces = leanHasPieces(result);
   const lean = result.doughs.find((d) => d.method === "base");
-  const spareG = lean && lean.usable >= 1 ? lean.usable : 0;
-  const spare = spareG > 0 ? ` · ${fmtG(spareG)} spare` : "";
-  const [only] = splits;
-  if (!only) return spareG > 0 ? `Nothing is made from it yet: ${fmtG(spareG)} spare.` : undefined;
-  if (splits.length === 1 && !spare)
-    return `All of it becomes ${splitsInWords(splits, (d) => d.name)}.`;
-  if (splits.length === 1) {
-    return `${portion(only)} becomes ${splitsInWords(splits, (d) => d.name)}${spare}.`;
+  const spareG = !leanPieces && lean && lean.usable >= 1 ? lean.usable : 0;
+  if (splits.length === 0) {
+    return spareG > 0 ? `Nothing is made from it yet: ${gramsInText(spareG)} spare.` : undefined;
   }
-  return `Split into ${splitsInWords(splits, (d) => `${d.name} (${portion(d)})`)}${spare}.`;
+  if (!leanPieces && spareG === 0) return undefined;
+  const taken = splitsInWords(
+    splits,
+    (d, i) => `${gramsInText(d.portion ?? 0)} ${i === 0 ? "goes to" : "to"} ${d.name}`,
+  );
+  return `of which ${taken}${spareG > 0 ? ` · ${gramsInText(spareG)} spare` : ""}.`;
 }
 
+/** A dough's notes as written, line breaks kept: the baker's own words. */
+const Notes = ({ text }: { text?: string }) =>
+  text?.trim() ? <p className="note-own">{text.trim()}</p> : null;
+
+/** A line of a mix or a split: its name, when it goes in, any note, and its grams. */
 function AdditionRow({ line }: { line: AdditionLine }) {
   const when = ADD_AT[line.addAt];
   return (
@@ -114,10 +144,12 @@ function AdditionRow({ line }: { line: AdditionLine }) {
         {when && (
           <>
             {" "}
-            <span className="muted small">({when})</span>
+            <span className="note-planner">({when})</span>
           </>
         )}
-        {line.note && <div className="muted small">{line.note}</div>}
+        {line.note && (
+          <div className={plannersNote(line) ? "note-planner" : "note-own"}>{line.note}</div>
+        )}
       </td>
       <td className="v">{fmtAmount(line.grams)}</td>
     </tr>
@@ -126,18 +158,17 @@ function AdditionRow({ line }: { line: AdditionLine }) {
 
 /**
  * One mix as weighed: flour and water as they go into the bowl (after any tangzhong), starter,
- * salt, the mix's own lines, the total, and its check row (§5.4: the lines shown, the tangzhong's
- * included, add up to the total shown). `usable` off leaves out the usable figure, for a main
- * dough nobody bakes as it is.
+ * salt and the mix's own lines, then the check across both columns (§5.4: the lines shown, the
+ * tangzhong's included, add up to the total on the section's heading row).
  */
 function MixTable({
   mix,
+  own,
   halfGramSalt,
-  usable = true,
 }: {
   mix: MixResult;
+  own?: DoughResult;
   halfGramSalt: boolean;
-  usable?: boolean;
 }) {
   const chk = checkRow(mix, halfGramSalt);
   return (
@@ -150,10 +181,10 @@ function MixTable({
         <tr>
           <td>
             Water
-            {mix.addedWater >= 20 && (
+            {reservesWater(mix, own) && (
               <>
                 {" "}
-                <span className="muted small">(keep ~20 g back for the salt)</span>
+                <span className="note-planner">(keep ~20&nbsp;g back for the&nbsp;salt)</span>
               </>
             )}
           </td>
@@ -172,17 +203,10 @@ function MixTable({
           .map((a, i) => (
             <AdditionRow key={`${a.kind}-${i}`} line={a} />
           ))}
-        <tr className="total">
-          <td>Total dough</td>
-          <td className="v">{fmtG(mix.totalDough)}</td>
-        </tr>
         <tr className="checkrow">
-          <td>
+          <td colSpan={2}>
             Check: ingredients add to {chk.sum} g{" "}
             <span className={chk.ok ? "ok" : "bad"}>{chk.ok ? "✓" : `✗ off by ${chk.diff} g`}</span>
-          </td>
-          <td className="v" style={{ fontSize: "0.85rem", fontWeight: 500 }}>
-            {usable && mix.usableDough !== mix.totalDough && `${fmtG(mix.usableDough)} usable`}
           </td>
         </tr>
       </tbody>
@@ -191,17 +215,18 @@ function MixTable({
 }
 
 /**
- * Decision 20: the paste is made first. Its two lines lead the mix's additions and are not on the
- * dough's result; the flour and water lines of the table below are what is left after them.
+ * Decision 20: the paste is made first, so it opens its mix's section, in the dough's colour. Its
+ * two lines lead the mix's additions and are not on the dough's result; the flour and water lines
+ * of the table below are what is left after them.
  */
-function TangzhongBlock({ mix }: { mix: MixResult }) {
+function TangzhongBlock({ mix, colour }: { mix: MixResult; colour: number }) {
   const flour = mix.additions.find((a) => a.kind === "tangzhong-flour");
   const liquid = mix.additions.find((a) => a.kind === "tangzhong-liquid");
   if (!flour || !liquid) return null;
   const note = flour.note ?? liquid.note;
   return (
-    <div className="callout info" style={{ margin: "8px 0" }}>
-      <strong>Tangzhong — make first</strong>
+    <div className={`subsection dough-${colour}`}>
+      <h4 className="head">Tangzhong, make first</h4>
       <table className="ingredients">
         <tbody>
           {[flour, liquid].map((a) => (
@@ -212,101 +237,143 @@ function TangzhongBlock({ mix }: { mix: MixResult }) {
           ))}
         </tbody>
       </table>
-      {note && <p className="small">{note}</p>}
+      {note && <p className="note-planner">{note}</p>}
     </div>
   );
 }
 
-/** A dough's notes as written, line breaks kept, under its mix or its split. */
-const Notes = ({ text }: { text?: string }) =>
-  text?.trim() ? <p className="muted small plan-notes">{text.trim()}</p> : null;
-
 /**
- * A split dough under the main dough it comes out of: the portion to take, what is worked into it
- * (its lines are not in the main dough's total), what that makes, and the dough's notes. `whole`:
- * the portion is the whole main dough, so it does not read as a second quantity to weigh.
+ * A split dough inside the main dough's section, in its colour: where it leaves (its heading),
+ * how much of the main dough it takes, what is worked in, what that makes (a result, not weighed,
+ * so smaller), and the dough's notes. `all`: it takes the whole main dough, so there is no
+ * portion to weigh.
  */
-function SplitBlock({ dough, whole }: { dough: DoughResult; whole: boolean }) {
+function SplitSection({
+  dough,
+  all,
+  colour,
+}: {
+  dough: DoughResult;
+  all: boolean;
+  colour: number;
+}) {
   return (
-    <div className="split-block">
-      <h3>
+    <div className={`subsection dough-${colour}`}>
+      <h4 className="head">
         {dough.icon && `${dough.icon} `}
         {dough.name}
-      </h3>
-      <p className="small">{dough.reason}</p>
-      <table className="ingredients">
-        <tbody>
-          <tr>
-            <td>{whole ? "Main dough, all of it" : "Portion of main dough"}</td>
-            <td className="v">{fmtG(dough.portion ?? 0)}</td>
-          </tr>
-          {dough.additions.map((a, i) => (
-            <AdditionRow key={`${a.kind}-${i}`} line={a} />
-          ))}
-          <tr className="total">
-            <td>Total dough</td>
-            <td className="v">{fmtG(dough.mass)}</td>
-          </tr>
-        </tbody>
-      </table>
+        {/* The dot stays with the name; the line may break after it. */}
+        {"\u00a0"}
+        <span className="where">
+          · split off{dough.splitAt ? ` ${SPLIT_AT[dough.splitAt]}` : ""}
+        </span>
+      </h4>
+      <p className="note-planner">
+        {all ? (
+          "All of the main dough."
+        ) : (
+          <>
+            Take <strong className="num nowrap">{fmtG(dough.portion ?? 0)}</strong> of the main
+            dough.
+          </>
+        )}
+      </p>
+      {dough.additions.length > 0 && (
+        <table className="ingredients">
+          <tbody>
+            {dough.additions.map((a, i) => (
+              <AdditionRow key={`${a.kind}-${i}`} line={a} />
+            ))}
+            <tr className="with-add-ins">
+              <td>With add-ins</td>
+              <td className="v">{fmtG(dough.mass)}</td>
+            </tr>
+          </tbody>
+        </table>
+      )}
       <Notes text={dough.notes} />
     </div>
   );
 }
 
 /**
- * One mixing bowl under its heading: the main dough with what becomes of it and the splits that
- * come out of it, or a dough mixed separately with its reason, its tangzhong first, its lines and
- * its notes.
+ * One mixing bowl as a section (decision 30). Its heading row: icon, name, a badge for a separate
+ * mix, and its figures: the dough it makes and, when some is lost, what is usable. Under it the
+ * mix: the planner's lines, any tangzhong, the weighed lines, then for the main dough what becomes
+ * of it, for a separate dough its notes. The main dough's splits follow the mix.
  */
-function MixBlock({
+function MixSection({
   mix,
   result,
   halfGramSalt,
+  several,
 }: {
   mix: MixResult;
   result: BatchResult;
   halfGramSalt: boolean;
+  several: boolean;
 }) {
   const base = mix.id === "base";
   const own = base ? undefined : result.doughs.find((d) => d.doughId === mix.id);
-  const splits = result.doughs.filter((d) => d.method === "split" && d.mixId === mix.id);
-  const plain = leanHasPieces(result);
+  const splits = base
+    ? result.doughs.filter((d) => d.method === "split" && d.mixId === mix.id)
+    : [];
+  const leanPieces = leanHasPieces(result);
+  // Decision 26, as every card colours a dough: the main dough neutral, the rest by library place.
+  const colour = own ? (doughColour(result, own.doughId) ?? 0) : 0;
+  // A main dough nobody bakes as it is (its splits take it) has no usable figure of its own.
+  const usable = (!base || leanPieces) && fmtG(mix.usableDough) !== fmtG(mix.totalDough);
   const fate = base ? mainDoughFate(result, splits) : undefined;
-  // One split taking a main dough that makes nothing else: its portion is all of it.
-  const whole = (d: DoughResult) =>
-    !plain && splits.length === 1 && Math.abs((d.portion ?? 0) - mix.totalDough) < 0.5;
-  // In print each child of a .mix-block stays whole: this one holds the heading with its table.
   return (
-    <div className="mix-block">
-      <div>
+    <div className={`section dough-${colour}${base ? "" : " separate-mix"}`}>
+      <div className="head">
         <h3>
           {own?.icon && `${own.icon} `}
           {mix.label}
         </h3>
-        {/* The card header gives the one mix's figures; several mixes each give their own. */}
-        {result.mixes.length > 1 && (
-          <p className="muted small num">
-            {fmtG(mix.totalFlour)} flour · {fmtPct(mix.trueHydration)} true hydration
+        {!base && <span className="badge neutral">separate mix</span>}
+        <span className="figures">
+          <span className="nowrap">{fmtG(mix.totalDough)}</span>
+          {usable && (
+            <>
+              {" · "}
+              <span className="nowrap">{fmtG(mix.usableDough)} usable</span>
+            </>
+          )}
+        </span>
+      </div>
+      {/* The mix itself, apart from the splits after it: one unit, so a section that has to break
+          across a page can break before a split and nowhere inside what goes into the bowl. */}
+      <div className="mix">
+        {/* The card header gives the one mix's flour and hydration; several give their own. */}
+        {several && (
+          <p className="note-planner num">
+            <span className="nowrap">{fmtG(mix.totalFlour)} flour</span>
+            {" · "}
+            <span className="nowrap">{fmtPct(mix.trueHydration)} true hydration</span>
           </p>
         )}
-        {own && <p className="small">{own.reason}</p>}
-        <TangzhongBlock mix={mix} />
-        {/* A main dough with no plain pieces is not a dough anyone bakes: no usable figure. */}
-        <MixTable mix={mix} halfGramSalt={halfGramSalt} usable={!base || plain} />
-        {fate && <p className="muted small">{fate}</p>}
+        {own?.reason && <p className="note-planner">{own.reason}</p>}
+        <TangzhongBlock mix={mix} colour={colour} />
+        <MixTable mix={mix} own={own} halfGramSalt={halfGramSalt} />
+        {fate && <p className="note-planner">{fate}</p>}
         <Notes text={own?.notes} />
       </div>
       {splits.map((d) => (
-        <SplitBlock key={d.doughId} dough={d} whole={whole(d)} />
+        <SplitSection
+          key={d.doughId}
+          dough={d}
+          all={takesAll(d, mix, leanPieces)}
+          colour={doughColour(result, d.doughId) ?? 0}
+        />
       ))}
     </div>
   );
 }
 
 /**
- * One table per mix (§4). A lean plan's single mix shows as it always has; any other plan heads
- * each mix with its dough and why it is mixed that way.
+ * Every mix as a section of its own (§4), the splits inside the main dough's. Kitchen mode
+ * renders this too, so everything it shows comes from the result.
  */
 export function IngredientsTable({
   result,
@@ -315,22 +382,36 @@ export function IngredientsTable({
   result: BatchResult;
   halfGramSalt: boolean;
 }) {
-  if (result.mixes.length === 0) return <p className="muted">Nothing to mix yet.</p>;
-  if (leanOnly(result)) {
-    return (
-      <>
-        {result.mixes.map((mix) => (
-          <MixTable key={mix.id} mix={mix} halfGramSalt={halfGramSalt} />
-        ))}
-      </>
-    );
-  }
+  if (result.mixes.length === 0) return <p className="note-planner">Nothing to mix yet.</p>;
+  const several = result.mixes.length > 1;
   return (
-    <>
+    <div className="ingredient-mixes">
       {result.mixes.map((mix) => (
-        <MixBlock key={mix.id} mix={mix} result={result} halfGramSalt={halfGramSalt} />
+        <MixSection
+          key={mix.id}
+          mix={mix}
+          result={result}
+          halfGramSalt={halfGramSalt}
+          several={several}
+        />
       ))}
-    </>
+    </div>
+  );
+}
+
+/**
+ * The first thing the bake needs, so it opens the card: the active starter, and with several
+ * mixes, which go in one after another, how it divides between them.
+ */
+function StarterLine({ result }: { result: BatchResult }) {
+  const per = result.mixes.map(
+    (m) => `${gramsInText(m.starter)} for ${m.id === "base" ? "the main dough" : m.label}`,
+  );
+  return (
+    <p className="note-planner starter">
+      Have <strong className="num">{fmtG(result.starter)}</strong> of active starter ready
+      {per.length > 1 ? ` by the first mix: ${joinAnd(per)}.` : " at mix time."}
+    </p>
   );
 }
 
@@ -338,39 +419,41 @@ export function IngredientsCard({ plan, result, halfGramSalt, onHalfGram }: Prop
   // The main dough's true hydration (the batch settings); without one, the only mix's.
   const base = result.mixes.find((m) => m.id === "base");
   const shown = base ?? (result.mixes.length === 1 ? result.mixes[0] : undefined);
-  const others = result.mixes.length > 1;
-  // Several mixes go in one after another, so the whole of the starter is out by the first.
-  const starterWhen = others ? `for the first mix (${result.mixes[0]?.label})` : "at mix time";
+  const several = result.mixes.length > 1;
+  const warned = result.warnings.length > 0;
   return (
-    <section className="card">
+    <section className="card ingredients-card">
       <header>
         <h2>Ingredients</h2>
         <span className="sub num">
-          {fmtG(result.totalFlour)} total flour
-          {shown &&
-            ` · ${fmtPct(shown.trueHydration)} true hydration${base && others ? " (main dough)" : ""}`}
+          <span className="nowrap">{fmtG(result.totalFlour)} total flour</span>
+          {shown && (
+            <>
+              {" · "}
+              <span className="nowrap">{fmtPct(shown.trueHydration)} true hydration</span>
+              {base && several ? " (main dough)" : ""}
+            </>
+          )}
         </span>
       </header>
+      {plan.mode === "items" && result.mixes.length > 0 && <StarterLine result={result} />}
       <IngredientsTable result={result} halfGramSalt={halfGramSalt} />
-      {plan.mode === "items" && (
-        <p className="muted small" style={{ marginTop: 8 }}>
-          Have <strong className="num">{fmtG(result.starter)}</strong>
-          {` of active starter ready ${starterWhen}.`}
-        </p>
+      {/* The scale toggle is not printed: a footer holding only it is not printed either. */}
+      {(onHalfGram || warned) && (
+        <footer className={warned ? "card-footer" : "card-footer no-print"}>
+          {onHalfGram && (
+            <label className="check no-print">
+              <input
+                type="checkbox"
+                checked={halfGramSalt}
+                onChange={(e) => onHalfGram(e.target.checked)}
+              />
+              <span className="small">My scale reads 0.5 g (show salt to the half gram)</span>
+            </label>
+          )}
+          <Warnings items={result.warnings} />
+        </footer>
       )}
-      {onHalfGram && (
-        <label className="check no-print" style={{ marginTop: 8 }}>
-          <input
-            type="checkbox"
-            checked={halfGramSalt}
-            onChange={(e) => onHalfGram(e.target.checked)}
-          />
-          <span className="small">My scale reads 0.5 g (show salt to the half gram)</span>
-        </label>
-      )}
-      <div style={{ marginTop: 10 }}>
-        <Warnings items={result.warnings} />
-      </div>
     </section>
   );
 }

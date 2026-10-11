@@ -1,1 +1,76 @@
-/* The Ingredients card (IngredientsCard.tsx): R2 of PLAN-redesign.md; its print block is R7's. */
+/* The Ingredients card (IngredientsCard.tsx): R2 of PLAN-redesign.md; its print block is R7's.
+ * Two roots, every rule under one of them (decision 29: this sheet loads before styles.css, so a
+ * rule here wins a tie only by specificity): .ingredients-card is the card, .ingredient-mixes is
+ * IngredientsTable, which kitchen mode renders too, so the sections read the same there. */
+
+/* The starter line opens the card, under its header. */
+.ingredients-card > .starter {
+  margin-bottom: var(--sp-1);
+}
+
+/* A section's heading names a mix; kitchen mode's margin for h3 does not apply on the row. */
+.ingredient-mixes > .section:first-child {
+  margin-top: var(--sp-3);
+}
+.ingredient-mixes .section > .head > h3 {
+  margin: 0;
+}
+/* A separate dough's name follows a dot in its colour (decision 26); the main dough has none. */
+.ingredient-mixes .separate-mix > .head > h3::before {
+  content: "";
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-right: 0.4em;
+  vertical-align: 0.12em;
+  border: 0.3em solid var(--dough, var(--dough-0));
+  border-radius: 50%;
+}
+
+/* A sub-section's heading: a split's name and where it leaves the main dough, or the tangzhong. */
+.ingredient-mixes .subsection > .head {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-md);
+  font-weight: 700;
+  line-height: 1.25;
+}
+.ingredient-mixes .subsection > .head > .where {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* The planner's lines and the baker's notes are paragraphs of the mix or the split they sit in
+   (.mix holds what goes into a section's bowl; its splits follow it); the planner's lines under a
+   heading stay close to it, and a figure in them reads in ink. */
+.ingredient-mixes :is(.mix, .subsection) > :is(.note-planner, .note-own) {
+  margin-top: var(--sp-2);
+}
+.ingredient-mixes :is(.mix, .subsection) > :is(.head, .note-planner) + .note-planner {
+  margin-top: var(--sp-1);
+}
+.ingredients-card > .starter strong,
+.ingredient-mixes .note-planner strong {
+  color: var(--ink);
+}
+/* A table after the lines above it or after the tangzhong made first, and a note under a line's
+   name. */
+.ingredient-mixes :is(.mix, .subsection) > .note-planner + .ingredients {
+  margin-top: var(--sp-1);
+}
+.ingredient-mixes .mix > .subsection + .ingredients {
+  margin-top: var(--sp-2);
+}
+.ingredient-mixes .ingredients td > :is(.note-planner, .note-own) {
+  margin-top: var(--sp-1);
+}
+
+/* Weighed lines at the weighed size (§5: today's 1.5rem as the token, so print scales it), kept
+   clear of the name beside them: a long name or note wraps rather than touch the number. */
+.ingredient-mixes .ingredients td.v {
+  padding-left: var(--sp-3);
+  font-size: var(--num-md);
+}
+/* What a split makes with its add-ins: a result, not weighed, so one size down. */
+.ingredient-mixes .ingredients tr.with-add-ins td.v {
+  font-size: var(--num-sm);
+}
