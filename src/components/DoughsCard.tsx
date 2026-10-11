@@ -101,26 +101,7 @@ const ENRICHMENT_KINDS = Object.keys(ENRICHMENTS) as EnrichmentKind[];
 const INCLUSION_KINDS = Object.keys(INCLUSIONS) as InclusionKind[];
 const SWEETENER_LIST: SweetenerInfo[] = Object.values(SWEETENERS);
 
-/** styles.css sizes checkboxes but not radios; this is its checkbox rule. */
-const RADIO: CSSProperties = {
-  width: 24,
-  height: 24,
-  minHeight: 0,
-  margin: 0,
-  padding: 0,
-  accentColor: "var(--accent)",
-};
-const SECTION: CSSProperties = { borderTop: "1px solid var(--line)", paddingTop: 12 };
-const FIELDSET: CSSProperties = { border: 0, margin: 0, padding: 0, minWidth: 0 };
-const GREYED: CSSProperties = { opacity: 0.55 };
-/** One enrichment or add-in: a box of its own inside the dough. */
-const ROW: CSSProperties = {
-  gap: 6,
-  background: "var(--card)",
-  border: "1px solid var(--line)",
-  borderRadius: 10,
-  padding: 10,
-};
+/** A row's hint and its Remove button stay side by side; `.row` alone wraps the button under. */
 const HINT_ROW: CSSProperties = { flexWrap: "nowrap" };
 
 /** A fraction of flour as the hints write it: "8 %", "0.02 g per 100 g". */
@@ -231,7 +212,7 @@ function summary(d: Dough): string {
   }
   for (const x of d.inclusions) {
     if (positive(x.pct) === 0) continue;
-    parts.push(`${x.name.trim() || inclusionLabel(x.kind)} ${pctText(x.pct)}`);
+    parts.push(`${x.name?.trim() || inclusionLabel(x.kind)} ${pctText(x.pct)}`);
   }
   if (d.tangzhong && positive(d.tangzhong.flourPct) > 0) {
     parts.push(`tangzhong ${pctText(d.tangzhong.flourPct)}`);
@@ -359,7 +340,7 @@ export function DoughsCard({ doughs, presets, onChange }: Props) {
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="stack" style={SECTION}>
+    <div className="stack dough-section">
       <h3>{title}</h3>
       {children}
     </div>
@@ -437,11 +418,7 @@ function DoughForm({
       </p>
       {users.length > 0 && <p className="muted small">The default dough of {joinAnd(users)}.</p>}
 
-      <fieldset
-        disabled={split}
-        aria-label="Hydration and salt"
-        style={split ? { ...FIELDSET, ...GREYED } : FIELDSET}
-      >
+      <fieldset disabled={split} aria-label="Hydration and salt" className="fieldset-reset">
         <div className="fields">
           <NumberField
             label="Hydration"
@@ -694,7 +671,7 @@ function EnrichmentRow({
   const info: EnrichmentInfo | undefined = ENRICHMENTS[e.kind];
   const defaultAt = enrichmentAddAt({ kind: e.kind, pct: e.pct });
   return (
-    <div className="stack" style={ROW}>
+    <div className="stack dough-row">
       <div className="fields">
         <div className="field">
           <label htmlFor={`${id}-kind`}>Enrichment</label>
@@ -723,34 +700,37 @@ function EnrichmentRow({
           min={0}
           max={200}
         />
-        {e.kind === "butter" && (
+        {e.kind === "butter" && split && (
+          // Decision 11: a split dough's butter goes in at the split, so the field is fixed and its
+          // group greys it, as it does hydration and salt. A text field, not a select: Chrome fades
+          // a disabled select again on its own, on screen and in print.
+          <fieldset disabled className="fieldset-reset field">
+            <label htmlFor={`${id}-at`}>Goes in</label>
+            <input id={`${id}-at`} type="text" value="At the split" readOnly />
+          </fieldset>
+        )}
+        {e.kind === "butter" && !split && (
           <div className="field">
             <label htmlFor={`${id}-at`}>Goes in</label>
-            {split ? (
-              <select id={`${id}-at`} value="split" disabled style={GREYED}>
-                <option value="split">At the split</option>
-              </select>
-            ) : (
-              <select
-                id={`${id}-at`}
-                value={e.addAt ?? ""}
-                onChange={(ev) =>
-                  onChange(
-                    tidy({
-                      ...e,
-                      addAt: (ev.target.value || undefined) as EnrichmentAddAt | undefined,
-                    }),
-                  )
-                }
-              >
-                <option value="">{ENRICHMENT_AT[defaultAt]} (default)</option>
-                {(Object.keys(ENRICHMENT_AT) as EnrichmentAddAt[]).map((a) => (
-                  <option key={a} value={a}>
-                    {ENRICHMENT_AT[a]}
-                  </option>
-                ))}
-              </select>
-            )}
+            <select
+              id={`${id}-at`}
+              value={e.addAt ?? ""}
+              onChange={(ev) =>
+                onChange(
+                  tidy({
+                    ...e,
+                    addAt: (ev.target.value || undefined) as EnrichmentAddAt | undefined,
+                  }),
+                )
+              }
+            >
+              <option value="">{ENRICHMENT_AT[defaultAt]} (default)</option>
+              {(Object.keys(ENRICHMENT_AT) as EnrichmentAddAt[]).map((a) => (
+                <option key={a} value={a}>
+                  {ENRICHMENT_AT[a]}
+                </option>
+              ))}
+            </select>
           </div>
         )}
       </div>
@@ -793,7 +773,6 @@ function SweetnessFields({
               value={c}
               checked={choice === c}
               onChange={() => pick(c)}
-              style={RADIO}
             />
             <span>{CHOICE_LABEL[c]}</span>
           </label>
@@ -864,7 +843,7 @@ function InclusionRow({
     ...(info?.note ? [info.note] : []),
   ].join(" ");
   return (
-    <div className="stack" style={ROW}>
+    <div className="stack dough-row">
       <div className="fields">
         <div className="field">
           <label htmlFor={`${id}-kind`}>Add-in</label>
@@ -890,7 +869,7 @@ function InclusionRow({
           <input
             id={`${id}-name`}
             type="text"
-            value={x.name}
+            value={x.name ?? ""}
             placeholder={inclusionLabel(x.kind)}
             onChange={(ev) => onChange({ ...x, name: ev.target.value })}
           />
