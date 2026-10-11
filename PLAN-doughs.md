@@ -50,7 +50,7 @@ chooses the mechanism from what the dough contains, and says why in the plan it 
    and lean step ids (`mix`, `bulk`, `divide`, `bench`, `shape:loaf` …) are byte-identical to
    today, so saved plans and their `timelineOverrides` keep working untouched. A line whose
    dough id is not in the library keeps its own key, `presetId@<missing id>`, so it never
-   collides with a lean line of the same preset; it computes as lean, is labelled "Lean
+   collides with a lean line of the same preset; it computes as lean, is labelled "Main dough
    (dough <id> not found)" and raises `unknown-dough`.
 3. **Two mechanisms, chosen per dough:** `method: "auto" | "split" | "separate"`. Under
    `auto` the effective method is `separate` when the dough has egg, yolk, milk, a sweetness
@@ -1097,7 +1097,8 @@ There is no ORCHESTRATION.md; this section is the gate until one exists.
   `.step`, `.track`, `.lane` or `.piece` is split. Ben's browser is Firefox: print CSS must not
   rely on grid or flex fragmentation.
 - Nothing is pushed until Ben has looked at it locally. WP-H leaves `npm run dev` running on
-  :5173 with examples A, A2, B and B3 saved as plans.
+  :5173 and seeds nothing into Ben's browser (his localStorage is his); the worked examples
+  are exercised in scratch worktrees instead, and the hand-back lists what to try.
 - Commit messages follow the repo's `type(scope): summary` style; one commit per package.
 
 Commit this plan to the repo root before wave 1 starts.
@@ -1134,4 +1135,25 @@ Raised during execution, deliberately not folded in:
    could say sugar, fat or "as set" (WP-G).
 10. **Firefox print is untested by tooling** (no headless print-to-PDF); the print CSS uses
     block flow and atomic blocks only, which Firefox fragments correctly, and Ben's own print
-    is the real check.
+    is the real check. (WP-G later ran headless Firefox 157 over WebDriver BiDi on five
+    plans: nothing split.)
+11. **"Keep ~20 g back for the salt" on enriched mixes** (`IngredientsCard.tsx:86`): their
+    routine puts the salt in with the flour; show it only for a mix with no enrichment or
+    sweetness lines, the rule `plainMixNote` already uses (WP-H).
+12. **The tangzhong note says "(it will while the starter feeds)"** even without a feed step
+    (`timeline.ts:456`), and a tangzhong on a separate dough holds the main mix back 45
+    minutes though only its own dough needs the paste: a product call on decision 20's
+    placement (WP-H).
+13. **The shared "Mix" step reads just "Mix"** beside tracks with their own "Mix"
+    (`timeline.ts:262`); "Mix (main dough)" when tracks show (WP-H).
+14. **`lineLabel` nests brackets**: "Baguette (Buttered (softer crumb))" in lanes, clash
+    warnings and suggestions; strip a parenthetical from the dough name or use a dash (WP-H).
+15. **A split block has no "usable" line** (`IngredientsCard.tsx:178-181`): its 808 g total
+    sits beside the division's "800 g of 800 g" after bench loss (WP-H).
+16. **Preset notes on a dough's shape step** (extends 7): the jalapeño loaf's shape step says
+    nothing about keeping the cheese inside, and a loaf on Soft sandwich dough says "250 °C
+    lidded" while it bakes at 190 °C (WP-H).
+17. **The timeline header's end time ignores the oven-clash order**: example A shows
+    "→ 17:15" while the clash puts the second loaf at 17:15–18:00 (WP-H).
+18. **`allocate(…, ctx = LEAN_CONTEXT)`** keeps a default: the app never calls `allocate`
+    and six older tests call it with three arguments; not a decision-21 default, left as is.
