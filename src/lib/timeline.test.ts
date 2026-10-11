@@ -464,6 +464,8 @@ describe("§5 multi-dough timeline", () => {
       expect(stepOf(t, "split@jalapeno-cheddar")?.note).toBe(
         "Work in 169 g mature cheddar, 54 g jalapeño (fresh, diced): this is all of the main dough.",
       );
+      // Nothing is split off, so the step says what it does.
+      expect(stepOf(t, "split@jalapeno-cheddar")?.label).toBe("Work in the add-ins");
       expect(trackOf(t, "jalapeno-cheddar")?.steps.map(run)).toEqual([
         ["split@jalapeno-cheddar", 40, 10],
         ["bulk@jalapeno-cheddar", 50, 260],
@@ -499,6 +501,7 @@ describe("§5 multi-dough timeline", () => {
       expect(t.tracks[0]!.steps[0]!.label).toBe("Bulk ferment");
       expect(t.tracks[0]!.steps[0]!.fixed).toBeUndefined();
       expect(t.tracks[0]!.folds.map(at)).toEqual([40, 70, 100, 130]);
+      expect(stepOf(t, "split@jalapeno-cheddar")?.label).toBe("Split off");
       expect(stepOf(t, "split@jalapeno-cheddar")?.note).toMatch(
         /^Take \d+ g of dough for Jalapeño cheddar\. Work in .* Keep it separate from here on\.$/,
       );
@@ -530,6 +533,26 @@ describe("§5 multi-dough timeline", () => {
         /^Take \d+ g of dough for Jalapeño cheddar\./,
       );
       expect(stepOf(t, "split@seeded")?.note).toMatch(/^Take \d+ g of dough for Seeded\./);
+      expect([
+        stepOf(t, "split@jalapeno-cheddar")?.label,
+        stepOf(t, "split@seeded")?.label,
+      ]).toEqual(["Split off", "Split off"]);
+      // A whole split with nothing to work in: odd, but it says plainly what it is.
+      const plain: Dough = {
+        id: "plain",
+        name: "Plain",
+        method: "split",
+        enrichments: [],
+        inclusions: [],
+      };
+      const bare = refTimeline(
+        { mode: "items", items: [{ presetId: "loaf", count: 1, doughId: "plain" }] },
+        [...DOUGHS, plain],
+      );
+      expect([stepOf(bare, "split@plain")?.label, stepOf(bare, "split@plain")?.note]).toEqual([
+        "Work in",
+        "This is all of the main dough.",
+      ]);
     });
 
     it("leaves a starter batch's spare in the main dough: still portioned, still undivided", () => {

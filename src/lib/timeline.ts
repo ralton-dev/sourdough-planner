@@ -447,7 +447,8 @@ function splitTrack(
   const { est, dur } = ctx;
   const into = INTO_BULK_MIN[splitAt] ?? INTO_BULK_MIN.fold1;
   const run = chain(addMin(baseBulk.start, into), dur);
-  const split = run.push(`split@${d.doughId}`, "Split off", 10, splitNote(d, whole));
+  const step = splitStep(d, whole);
+  const split = run.push(`split@${d.doughId}`, step.label, 10, step.note);
   const factor = d.bulkFactor;
   const gone = (split.end.getTime() - baseBulk.start.getTime()) / 60_000;
   const left = (minutes: number) => Math.max(0, minutes * factor - gone);
@@ -501,15 +502,22 @@ function tangzhongNote(d: DoughResult, tz: TangzhongLines): string {
 }
 
 /** §5, decision 11: how much base dough to take, and everything that goes into it now. */
-function splitNote(d: DoughResult, whole: boolean): string {
+function splitStep(d: DoughResult, whole: boolean): { label: string; note: string } {
   const work = phrases(d.additions.filter((a) => a.addAt !== "shape"));
+  // Nothing is split off when the split takes the whole main dough: the step only works in.
   if (whole) {
     return work.length > 0
-      ? `Work in ${work.join(", ")}: this is all of the main dough.`
-      : "This is all of the main dough.";
+      ? {
+          label: "Work in the add-ins",
+          note: `Work in ${work.join(", ")}: this is all of the main dough.`,
+        }
+      : { label: "Work in", note: "This is all of the main dough." };
   }
   const workIn = work.length > 0 ? ` Work in ${work.join(", ")}.` : "";
-  return `Take ${grams(d.portion ?? 0)} of dough for ${d.name}.${workIn} Keep it separate from here on.`;
+  return {
+    label: "Split off",
+    note: `Take ${grams(d.portion ?? 0)} of dough for ${d.name}.${workIn} Keep it separate from here on.`,
+  };
 }
 
 /**
