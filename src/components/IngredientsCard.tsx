@@ -8,6 +8,7 @@ import {
 } from "../lib/types";
 import { checkRow, fmtG, fmtPct, fmtSalt, joinAnd } from "../lib/format";
 import { Warnings } from "./Warnings";
+import "./ingredients.css";
 
 interface Props {
   plan: Plan;

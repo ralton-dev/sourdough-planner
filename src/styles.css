@@ -18,6 +18,28 @@
   --shadow: 0 1px 2px rgb(40 25 10 / 0.08), 0 6px 20px -12px rgb(40 25 10 / 0.25);
   --font: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* The design system (PLAN-redesign §5, decision 28). The type sizes are below; kitchen mode
+     and print scale them by one factor each through --scale. Spacing and radii do not scale. */
+  --scale: 1;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --radius-sm: 8px; /* rows */
+  --radius-md: 14px; /* cards; --radius stays 14 px */
+  /* Dough colours (decision 26): the main dough neutral, every other dough by its place among
+     the doughs in use (library order), wrapping after five. Each is 4.5:1 or better as text on
+     --card and --card-2 in both schemes, and never the only carrier: icon and name go with it.
+     Light: blue, rose, teal, violet, olive. */
+  --dough-0: var(--muted);
+  --dough-1: #2d63a6;
+  --dough-2: #a83d73;
+  --dough-3: #1a6d60;
+  --dough-4: #6b4fb3;
+  --dough-5: #5a6811;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -36,7 +58,28 @@
     --ok: #7ccf8f;
     --danger: #ef8a7a;
     --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.6);
+    --dough-1: #8db7ec;
+    --dough-2: #ef9ac6;
+    --dough-3: #63c7b2;
+    --dough-4: #b9a2f0;
+    --dough-5: #c4c96a;
   }
+}
+/*
+ * Type (§5): --fs-xs badges, pills and hints · --fs-sm notes and sub lines · --fs-md body ·
+ * --fs-lg section heads; numbers --num-sm not weighed (a portion, a split's total) · --num-md
+ * weighed · --num-lg piece counts. Declared again on .kitchen because a custom property's var()
+ * resolves where it is declared: one --scale there, or in print, rescales every size at once.
+ */
+:root,
+.kitchen {
+  --fs-xs: calc(0.78rem * var(--scale));
+  --fs-sm: calc(0.88rem * var(--scale));
+  --fs-md: calc(1rem * var(--scale));
+  --fs-lg: calc(1.15rem * var(--scale));
+  --num-sm: calc(1.15rem * var(--scale));
+  --num-md: calc(1.5rem * var(--scale));
+  --num-lg: calc(2.2rem * var(--scale));
 }
 
 * {
@@ -170,6 +213,10 @@ textarea {
   gap: 14px;
   grid-template-columns: 1fr;
 }
+/* Side by side, each card as tall as its own content: a short Division beside a long Ingredients. */
+.grid.two {
+  align-items: start;
+}
 @media (min-width: 760px) {
   .grid.two {
     grid-template-columns: 1fr 1fr;
@@ -194,13 +241,13 @@ textarea {
 }
 .card > header .sub {
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
 }
 .muted {
   color: var(--muted);
 }
 .small {
-  font-size: 0.88rem;
+  font-size: var(--fs-sm);
 }
 .mono {
   font-family: var(--mono);
@@ -232,7 +279,7 @@ textarea {
 
 .field label {
   display: block;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   color: var(--muted);
   margin-bottom: 4px;
   font-weight: 600;
@@ -249,11 +296,11 @@ textarea {
   top: 50%;
   transform: translateY(-50%);
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
   pointer-events: none;
 }
 .field .hint {
-  font-size: 0.8rem;
+  font-size: var(--fs-xs);
   color: var(--muted);
   margin-top: 3px;
 }
@@ -322,6 +369,109 @@ textarea {
   cursor: pointer;
 }
 
+/*
+ * Shared primitives (§5, decision 30) for the card packages to build on. A card is sections: a
+ * section opens with a heading row on a top rule, its figures on that row; a split is a
+ * sub-section behind a rule in its dough colour; a note is the planner's (muted) or the baker's
+ * own (ink, behind a rule); card-level lines sit in a footer. The dough colour comes from a
+ * dough-N class on the element or an ancestor, never an inline style; rules and dots are borders,
+ * so they print without background graphics.
+ */
+.section {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line);
+}
+/* The heading row: icon, name, badge; then the section's figures, right-aligned (.figures). */
+.section > .head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-2);
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  line-height: 1.15;
+}
+.section > .head > :is(h2, h3, h4) {
+  font-size: inherit;
+}
+.section > .head > .figures {
+  margin-left: auto;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.subsection {
+  margin-top: var(--sp-3);
+  padding-left: var(--sp-4);
+  border-left: 3px solid var(--dough, var(--dough-0));
+}
+/* The planner's explanations. */
+.note-planner {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+/* The baker's own words (dough, add-in and plan notes), line breaks kept. */
+.note-own {
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  padding-left: var(--sp-2);
+  border-left: 2px solid var(--line);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.card-footer {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line);
+}
+.card-footer > * + * {
+  margin-top: var(--sp-2);
+}
+/* A dough by name: a dot in its colour, then its icon and name. */
+.dough-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+.dough-tag::before {
+  content: "";
+  flex: none;
+  width: 0;
+  height: 0;
+  border: 0.3em solid var(--dough, var(--dough-0));
+  border-radius: 50%;
+}
+/* A dough's bulk running, in a gutter: a 3 px rule in its colour. */
+.dough-rail {
+  display: block;
+  width: 0;
+  min-height: 1em;
+  border-left: 3px solid var(--dough, var(--dough-0));
+}
+/* dough-0 is the main dough: it resets a colour inherited from an enclosing dough. */
+.dough-0 {
+  --dough: var(--dough-0);
+}
+.dough-1 {
+  --dough: var(--dough-1);
+}
+.dough-2 {
+  --dough: var(--dough-2);
+}
+.dough-3 {
+  --dough: var(--dough-3);
+}
+.dough-4 {
+  --dough: var(--dough-4);
+}
+.dough-5 {
+  --dough: var(--dough-5);
+}
+
 /* ingredient table */
 .ingredients {
   width: 100%;
@@ -347,7 +497,7 @@ textarea {
   border-bottom: 0;
 }
 .ingredients tr.checkrow td {
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   color: var(--muted);
   padding-top: 6px;
 }
@@ -417,7 +567,7 @@ textarea {
 }
 .badge {
   display: inline-block;
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   font-weight: 700;
   padding: 2px 7px;
   border-radius: 999px;
@@ -515,9 +665,10 @@ textarea {
   display: grid;
   gap: 0;
 }
+/* The note column's minimum is 0, not its longest word, so on a phone the note gets the width. */
 .step {
   display: grid;
-  grid-template-columns: 62px 1fr auto;
+  grid-template-columns: 62px minmax(0, 1fr) auto;
   gap: 6px 10px;
   align-items: start;
   padding: 10px 0;
@@ -540,22 +691,23 @@ textarea {
 }
 .step .note {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
 }
 .step .dur {
   display: flex;
   align-items: center;
   gap: 4px;
 }
+/* As wide as four digits (1440, a day's cold retard), not 74 px: 3.2em with 4 px side padding. */
 .step .dur input {
-  width: 74px;
+  width: 3.2em;
   text-align: right;
-  padding: 6px 8px;
+  padding: 6px var(--sp-1);
   min-height: 40px;
 }
 .step .dur .u {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
 }
 .fold-count {
   display: flex;
@@ -565,7 +717,7 @@ textarea {
 }
 .fold-count-label {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -592,13 +744,14 @@ textarea {
   background: var(--card-2);
   border-radius: 999px;
   padding: 2px 9px;
-  font-size: 0.8rem;
+  font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
+/* At least 300 px a lane (less only on a card narrower than that); a lone lane takes the width. */
 .lanes {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
   margin-top: 12px;
 }
 .lane {
@@ -614,12 +767,12 @@ textarea {
   margin-bottom: 6px;
 }
 .lane .step {
-  grid-template-columns: 58px 1fr auto;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
   padding: 7px 0;
 }
 .lane .window {
   margin-top: 8px;
-  font-size: 0.88rem;
+  font-size: var(--fs-sm);
 }
 .track {
   background: var(--card-2);
@@ -636,7 +789,7 @@ textarea {
 }
 .track .reason {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   margin-top: 4px;
 }
 .track .folds span {
@@ -739,8 +892,12 @@ details[open] > summary::before {
   color: var(--ink);
   overflow-y: auto;
   padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
+  /* The content at most 820 px wide and centred; the overlay itself still covers the screen. */
+  padding-inline: max(16px, calc((100% - 820px) / 2));
   z-index: 50;
   font-size: 1.35rem;
+  /* Kitchen type is one factor up (§5): every size set through the tokens follows. */
+  --scale: 1.3;
 }
 .kitchen h1 {
   font-size: 1.8rem;
@@ -767,7 +924,7 @@ details[open] > summary::before {
   font-size: 3rem;
 }
 .kitchen .step {
-  grid-template-columns: 90px 1fr;
+  grid-template-columns: 90px minmax(0, 1fr);
   font-size: 1.3rem;
 }
 .kitchen .step .note {
@@ -787,7 +944,7 @@ details[open] > summary::before {
 .footer {
   margin-top: 22px;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: var(--fs-xs);
   text-align: center;
 }
 .footer p {
@@ -828,6 +985,35 @@ details[open] > summary::before {
   margin: 12mm 14mm;
 }
 @media print {
+  /* A dark screen prints dark ink: the light palette again (keep it in step with :root above). */
+  :root {
+    color-scheme: light;
+    --bg: #f6efe4;
+    --card: #fffaf2;
+    --card-2: #f1e6d3;
+    --ink: #2a2118;
+    --muted: #6f6152;
+    --line: #dccbb0;
+    --accent: #b5641f;
+    --accent-ink: #fff7ee;
+    --warn-bg: #fff1d6;
+    --warn-ink: #7a4a00;
+    --info-bg: #e9f0ef;
+    --info-ink: #2f5a52;
+    --ok: #3b7a4a;
+    --danger: #a13a2a;
+    --shadow: 0 1px 2px rgb(40 25 10 / 0.08), 0 6px 20px -12px rgb(40 25 10 / 0.25);
+    --dough-1: #2d63a6;
+    --dough-2: #a83d73;
+    --dough-3: #1a6d60;
+    --dough-4: #6b4fb3;
+    --dough-5: #5a6811;
+  }
+  /* Print type is one factor down (§5), as kitchen mode's is one up. */
+  :root,
+  .kitchen {
+    --scale: 0.9;
+  }
   html,
   body {
     background: #fff;
@@ -889,6 +1075,19 @@ details[open] > summary::before {
   }
   .lane {
     margin: 0 0 8px;
+  }
+  /* The shared primitives (decision 32): whole when they fit; a heading row never ends a page. */
+  .section,
+  .subsection,
+  .note-planner,
+  .note-own,
+  .card-footer {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .section > .head {
+    break-after: avoid;
+    page-break-after: avoid;
   }
   /* Lane and track headings, and a piece group's: never the last line on a page. */
   h3,

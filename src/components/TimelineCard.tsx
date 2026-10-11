@@ -9,6 +9,7 @@ import {
 } from "../lib/timeline";
 import { fmtDayTime, fmtDuration, fmtRange, fmtTime } from "../lib/format";
 import { FeedHelper } from "./FeedHelper";
+import "./timeline.css";
 
 interface Props {
   plan: Plan;

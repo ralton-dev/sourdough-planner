@@ -6,6 +6,7 @@ import { fmtDayTime, fmtDuration, fmtTime } from "../lib/format";
 import { IngredientsTable } from "./IngredientsCard";
 import { Pieces } from "./DivisionCard";
 import { isBulkStep, placeTracks, trackBadge, trackTitle } from "./TimelineCard";
+import "./kitchen.css";
 
 interface Props {
   plan: Plan;

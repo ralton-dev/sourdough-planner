@@ -36,6 +36,7 @@ import {
   type Sweetness,
 } from "../lib/types";
 import { NumberField } from "./NumberField";
+import "./doughs.css";
 
 interface Props {
   /** The dough library, in library order. The lean dough is never in it (decision 1). */

@@ -9,6 +9,7 @@ import {
 import { effectiveMethod, findDough, lineKey, positive, resolveDoughId } from "../lib/doughs";
 import { lineLabel } from "../lib/format";
 import { NumberField } from "./NumberField";
+import "./items.css";
 
 interface Props {
   plan: Plan;

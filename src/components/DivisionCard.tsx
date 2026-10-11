@@ -7,6 +7,7 @@ import {
 } from "../lib/types";
 import { leanDough } from "../lib/doughs";
 import { fmtG, lineLabel } from "../lib/format";
+import "./division.css";
 
 interface Props {
   plan: Plan;
