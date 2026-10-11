@@ -120,7 +120,7 @@ export function collectWarnings(
     out.push({
       level: "warn",
       code: "short",
-      message: `Not enough dough: short by ${Math.round(-r.spareOrShort)} g after every flex item hit its minimum.`,
+      message: `Not enough dough: short by ${Math.round(-r.spareOrShort)} g of main dough after every flex item hit its minimum.`,
     });
   }
 
@@ -258,7 +258,9 @@ function doughNotes(d: Dough, res: DoughResult, plan: Plan): PlanWarning[] {
   const saltyLoad = salty.reduce((n, x) => n + x.pct, 0);
   if (saltyLoad >= 0.15 - EPS) {
     const names = [
-      ...new Set(salty.map((x) => (x.name.trim() || INCLUSIONS[x.kind].label).toLowerCase())),
+      ...new Set(
+        salty.map((x) => (x.name?.trim() || INCLUSIONS[x.kind]?.label || x.kind).toLowerCase()),
+      ),
     ];
     const shared = res.method === "split" ? " A split dough shares the main dough's salt." : "";
     info(

@@ -1,7 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_DOUGHS, cloneDoughs } from "./doughs";
 import { DEFAULT_PRESETS, LEGACY_PRESETS, clonePresets } from "./presets";
-import { KEYS, exportBundle, isDoughList, loadAll, newPlan, parseBundle, save } from "./storage";
+import {
+  KEYS,
+  exportBundle,
+  isDough,
+  isDoughList,
+  loadAll,
+  newPlan,
+  parseBundle,
+  save,
+} from "./storage";
 import { DEFAULT_BULK_TABLE } from "./timeline";
 import { LEAN_DOUGH_ID, type Dough, type Plan, type Preset } from "./types";
 
@@ -138,7 +147,7 @@ const NEW_IDS = ["dinner-roll", "burger-bun", "hot-dog-bun"];
 const ids = (list: readonly { id: string }[]) => list.map((x) => x.id);
 const LEAN: Dough = {
   id: LEAN_DOUGH_ID,
-  name: "Lean",
+  name: "Main dough",
   method: "auto",
   enrichments: [],
   inclusions: [],
@@ -214,6 +223,16 @@ describe("export / import", () => {
     expect(() => parseBundle('{"hello":1}')).toThrow(/Not a sourdough-planner export/);
   });
 
+  it("imports a version 2 bundle with a fully set dough, and refuses one with a nameless add-in", () => {
+    const good = bundleOf([...cloneDoughs(), FULL]);
+    expect(parseBundle(good).doughs.at(-1)).toEqual(FULL);
+    const bad = JSON.stringify({
+      ...(JSON.parse(good) as object),
+      doughs: [fullWith({ inclusions: [{ kind: "cheese", pct: 0.2 }] })],
+    });
+    expect(() => parseBundle(bad)).toThrow(/invalid doughs/);
+  });
+
   it("rejects what it cannot read", () => {
     const good = JSON.parse(bundleOf(cloneDoughs())) as object;
     const bad = (patch: object) => () => parseBundle(JSON.stringify({ ...good, ...patch }));
@@ -230,14 +249,77 @@ describe("export / import", () => {
   });
 });
 
+/** A dough with every optional field set, as the editor can write it. */
+const FULL: Dough = {
+  id: "dough-full",
+  name: "Everything",
+  icon: "🥯",
+  method: "separate",
+  hydration: 0.68,
+  salt: 0.018,
+  enrichments: [
+    { kind: "milk", pct: 0.3 },
+    { kind: "butter", pct: 0.15, addAt: "after-mix" },
+  ],
+  inclusions: [
+    { kind: "cheese", name: "Gruyère", pct: 0.2, addAt: "shape", note: "Cubed." },
+    { kind: "seed", name: "", pct: 0.1, soakerWaterPct: 0.1 },
+  ],
+  sweetness: { kind: "xylitol", pct: 0.04 },
+  tangzhong: { flourPct: 0.05, ratio: 5 },
+  splitAt: "fold2",
+  bulkFactor: 1.2,
+  bake: { tempC: 190, steam: false, wash: "Egg" },
+  notes: "All of it.",
+};
+
+/** FULL with one part of it replaced by `patch`. */
+const fullWith = (patch: Record<string, unknown>): unknown => ({ ...FULL, ...patch });
+
 describe("validators and the new plan", () => {
-  it("accepts a dough library with ids, names and both lists, and nothing less", () => {
+  it("accepts the default library, a fully set dough and nothing malformed", () => {
     expect(isDoughList(cloneDoughs())).toBe(true);
     expect(isDoughList([])).toBe(true);
+    expect(isDough(FULL)).toBe(true);
     expect(isDoughList([{ id: "a", name: "A", enrichments: [] }])).toBe(false);
     expect(isDoughList([{ id: "a", enrichments: [], inclusions: [] }])).toBe(false);
     expect(isDoughList([null])).toBe(false);
     expect(isDoughList({})).toBe(false);
+  });
+
+  it("refuses an add-in without a name, the shape that crashed the planner", () => {
+    const nameless = fullWith({ inclusions: [{ kind: "cheese", pct: 0.2 }] });
+    expect(isDough(nameless)).toBe(false);
+    expect(isDoughList([...cloneDoughs(), nameless])).toBe(false);
+  });
+
+  it("refuses kinds and settings this app does not know", () => {
+    expect(isDough(fullWith({ enrichments: [{ kind: "cream", pct: 0.1 }] }))).toBe(false);
+    expect(isDough(fullWith({ inclusions: [{ kind: "bacon", name: "Bacon", pct: 0.1 }] }))).toBe(
+      false,
+    );
+    // Allulose is not on the list (decision 23).
+    expect(isDough(fullWith({ sweetness: { kind: "allulose", pct: 0.05 } }))).toBe(false);
+    expect(isDough(fullWith({ method: "maybe" }))).toBe(false);
+    expect(isDough(fullWith({ splitAt: "fold3" }))).toBe(false);
+    expect(isDough(fullWith({ enrichments: [{ kind: "milk", pct: 0.3, addAt: "later" }] }))).toBe(
+      false,
+    );
+  });
+
+  it("refuses an amount that is not a finite number, and a null where text or a number goes", () => {
+    expect(isDough(fullWith({ enrichments: [{ kind: "milk", pct: "30" }] }))).toBe(false);
+    expect(isDough(fullWith({ enrichments: [{ kind: "milk", pct: null }] }))).toBe(false);
+    expect(isDough(fullWith({ tangzhong: { flourPct: 0.05 } }))).toBe(false);
+    expect(isDough(fullWith({ sweetness: { kind: "sugar" } }))).toBe(false);
+    expect(
+      isDough(
+        fullWith({ inclusions: [{ kind: "seed", name: "S", pct: 0.1, soakerWaterPct: "x" }] }),
+      ),
+    ).toBe(false);
+    expect(isDough(fullWith({ bake: { tempC: "hot" } }))).toBe(false);
+    expect(isDough(fullWith({ icon: null }))).toBe(false);
+    expect(isDough(fullWith({ hydration: null }))).toBe(false);
   });
 
   it("starts a new plan lean, with no add-ins setting or notes written (decision 6)", () => {
@@ -345,6 +427,13 @@ describe("loadAll", () => {
     expect(ids(all.doughs)).toEqual(ids(DEFAULT_DOUGHS));
     expect(all.presets).toEqual(DEFAULT_PRESETS);
     expect(s.data.get(KEYS.presets)).toBe("{not json");
+  });
+
+  it("falls back to the default library when one stored dough is malformed, and leaves it stored", () => {
+    const stored = [...cloneDoughs(), fullWith({ inclusions: [{ kind: "cheese", pct: 0.2 }] })];
+    const s = useStorage({ [KEYS.doughs]: stored });
+    expect(loadAll().doughs).toEqual(DEFAULT_DOUGHS);
+    expect(s.read(KEYS.doughs)).toEqual(stored);
   });
 
   it("records nothing as given when the write-back fails", () => {

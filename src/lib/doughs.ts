@@ -385,10 +385,11 @@ export function cloneDoughs(list: Dough[] = DEFAULT_DOUGHS): Dough[] {
 /**
  * The base dough under its reserved id (decision 1): nothing in it, no hydration or salt of its
  * own, so every helper reads the plan's Batch settings for it. Never stored. Its effective
- * method is "base"; `effectiveMethod` (split or separate) does not apply to it.
+ * method is "base"; `effectiveMethod` (split or separate) does not apply to it. Its name is the
+ * one the app shows everywhere: "Main dough".
  */
 export function leanDough(): Dough {
-  return { id: LEAN_DOUGH_ID, name: "Lean", method: "auto", enrichments: [], inclusions: [] };
+  return { id: LEAN_DOUGH_ID, name: "Main dough", method: "auto", enrichments: [], inclusions: [] };
 }
 
 /** The dough behind an id: lean, a library dough, or undefined when the library has no such id. */

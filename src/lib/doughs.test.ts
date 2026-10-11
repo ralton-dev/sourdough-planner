@@ -293,7 +293,10 @@ describe("lines and keys (decision 2)", () => {
 
   it("finds lean without the library and reports a missing dough as undefined", () => {
     expect(findDough(LEAN_DOUGH_ID, [])).toEqual(leanDough());
-    expect(findDough(LEAN_DOUGH_ID, [{ ...byId("seeded"), id: LEAN_DOUGH_ID }])?.name).toBe("Lean");
+    expect(leanDough().name).toBe("Main dough");
+    expect(findDough(LEAN_DOUGH_ID, [{ ...byId("seeded"), id: LEAN_DOUGH_ID }])?.name).toBe(
+      "Main dough",
+    );
     expect(findDough("seeded", DEFAULT_DOUGHS)).toBe(byId("seeded"));
     expect(findDough("deleted", DEFAULT_DOUGHS)).toBeUndefined();
   });

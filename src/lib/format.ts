@@ -70,8 +70,12 @@ export function fmtDayTime(d: Date, ref?: Date): string {
   }).format(d);
 }
 
+/**
+ * Whole minutes, as hours and minutes from an hour up. The nudge keeps a half that floating point
+ * lands a hair short of (330 × 1.15 = 379.49999999999994) rounding up, as it would on paper.
+ */
 export function fmtDuration(minutes: number): string {
-  const m = Math.round(minutes);
+  const m = Math.round(minutes + 1e-6);
   if (m < 60) return `${m} min`;
   const h = Math.floor(m / 60);
   const rest = m % 60;

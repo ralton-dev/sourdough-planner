@@ -825,10 +825,10 @@ describe("§5 multi-dough timeline", () => {
       ],
     });
     expect(t.tracks.map((tr) => tr.doughId)).toEqual([LEAN_DOUGH_ID]);
-    // Its own key, so it never merges with the lean loaf; timed as lean, so it reads lean.
+    // Its own key, so it never merges with the lean loaf; timed as lean, so it reads as the main dough.
     expect(t.lanes.map((l) => [l.key, l.doughId, l.doughName])).toEqual([
-      ["loaf", LEAN_DOUGH_ID, "Lean"],
-      ["loaf@gone", LEAN_DOUGH_ID, "Lean (dough gone not found)"],
+      ["loaf", LEAN_DOUGH_ID, "Main dough"],
+      ["loaf@gone", LEAN_DOUGH_ID, "Main dough (dough gone not found)"],
     ]);
     expect(laneOf(t, "loaf@gone")?.steps.map(run)).toEqual([
       ["shape:loaf@gone", 350, 10],

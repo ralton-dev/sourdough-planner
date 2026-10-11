@@ -220,7 +220,7 @@ describe("§5.5 reference bake — starter mode", () => {
     expect(r.mixes[0]?.mixMinutes).toBe(10);
     // Lean lines keep their preset id as key; the piece is all dough.
     for (const l of r.allocation) {
-      expect(l).toMatchObject({ key: l.presetId, doughId: LEAN_DOUGH_ID, doughName: "Lean" });
+      expect(l).toMatchObject({ key: l.presetId, doughId: LEAN_DOUGH_ID, doughName: "Main dough" });
       expect([l.doughEach, l.additionsEach, l.pieceEach]).toEqual([l.weightEach, 0, l.weightEach]);
     }
   });
@@ -1197,7 +1197,9 @@ describe("§4 multi-dough maths", () => {
     near(r.totalFlour, 450);
     near(r.totalDough, 450 * 1.8396);
     near(r.spareOrShort, -127.179);
-    expect(warning(r, "short")?.message).toMatch(/short by 127 g/);
+    expect(warning(r, "short")?.message).toBe(
+      "Not enough dough: short by 127 g of main dough after every flex item hit its minimum.",
+    );
     expect(r.suggestions[0]).toBe("Short by 127 g.");
     expect(r.suggestions[1]).toBe("Drop one Roll (Soft bun dough) to free 115 g.");
   });
@@ -1355,8 +1357,35 @@ describe("§4 multi-dough maths", () => {
     expect(r.allocation.find((l) => l.presetId === "loaf")).toMatchObject({
       key: "loaf@deleted-dough",
       doughId: LEAN_DOUGH_ID,
-      doughName: "Lean (dough deleted-dough not found)",
+      doughName: "Main dough (dough deleted-dough not found)",
     });
+  });
+});
+
+describe("a dough with an add-in missing its name", () => {
+  it("names the add-in by its kind rather than failing", () => {
+    // Storage refuses such a dough; this is the planner's own guard for a bad value in memory.
+    const nameless = {
+      ...libraryDough("jalapeno-cheddar"),
+      id: "nameless",
+      inclusions: [
+        { kind: "cheese", pct: 0.25 },
+        { kind: "seed", pct: 0.15, soakerWaterPct: 0.15 },
+      ],
+    } as unknown as Dough;
+    const r = computePlan(
+      refPlan({
+        items: [{ presetId: "loaf", count: 1, weightOverride: 600, doughId: "nameless" }],
+      }),
+      REF_PRESETS,
+      [...DOUGHS, nameless],
+    );
+    expect(doughOf(r, "nameless")?.additions.map((a) => a.label)).toEqual([
+      "Cheese",
+      "Seeds",
+      "Soaker water (seeds)",
+    ]);
+    expect(warning(r, "salty-inclusions")?.message).toMatch(/\(cheese\)/);
   });
 });
 
@@ -1372,15 +1401,15 @@ describe("the line naming rule (decision 2)", () => {
       steps: [],
     };
     expect(lineLabel(lane)).toBe("Loaf (Jalapeño cheddar)");
-    expect(lineLabel({ ...lane, key: "loaf", doughId: LEAN_DOUGH_ID, doughName: "Lean" })).toBe(
-      "Loaf",
-    );
+    expect(
+      lineLabel({ ...lane, key: "loaf", doughId: LEAN_DOUGH_ID, doughName: "Main dough" }),
+    ).toBe("Loaf");
     expect(
       lineLabel({
         ...lane,
         key: "loaf@x",
         doughId: LEAN_DOUGH_ID,
-        doughName: "Lean (dough x not found)",
+        doughName: "Main dough (dough x not found)",
       }),
     ).toBe("Loaf (dough x not found)");
     const r = computePlan(

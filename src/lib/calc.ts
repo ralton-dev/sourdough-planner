@@ -163,7 +163,7 @@ function resolveLines(items: ItemSelection[], presets: Preset[], ctx: LineContex
       name: p.name,
       icon: p.icon,
       doughId: d.id,
-      doughName: found ? d.name : `Lean (dough ${asked} not found)`,
+      doughName: found ? d.name : `${lean.name} (dough ${asked} not found)`,
       count: Math.floor(sel.count),
       baseWeight,
       weightEach: baseWeight,
@@ -505,7 +505,7 @@ function perMix(
     mixes.unshift({
       ...base,
       id: "base",
-      label: "Main dough",
+      label: leanDough().name,
       doughIds: onBase.map((x) => x.dough.id),
       additions: [],
       mixMinutes: 10,
@@ -751,7 +751,7 @@ function additionLines(d: Dough, flour: number, split: boolean): AdditionLine[] 
       const note = x.note || INCLUSIONS[x.kind]?.note;
       push({
         kind: x.kind,
-        label: x.name.trim() || kindLabel,
+        label: x.name?.trim() || kindLabel,
         pct: x.pct,
         addAt,
         ...(note && { note }),
@@ -759,7 +759,7 @@ function additionLines(d: Dough, flour: number, split: boolean): AdditionLine[] 
     }
     const soaker = positive(x.soakerWaterPct);
     if (soaker > 0) {
-      const what = x.name.replace(/\s*\(.*\)\s*$/, "").trim() || kindLabel;
+      const what = (x.name ?? "").replace(/\s*\(.*\)\s*$/, "").trim() || kindLabel;
       push({
         kind: "soaker-water",
         label: `Soaker water (${what.toLowerCase()})`,

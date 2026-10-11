@@ -44,6 +44,15 @@ describe("§5.4 rounding", () => {
     expect(fmtDuration(120)).toBe("2 h");
     expect(fmtDuration(330)).toBe("5 h 30 min");
   });
+
+  it("rounds a half that floating point lands just short of up, and a real fraction as it is", () => {
+    expect(330 * 1.15).toBeLessThan(379.5); // 379.49999999999994
+    expect(fmtDuration(330 * 1.15)).toBe("6 h 20 min");
+    expect(fmtDuration(379.5)).toBe("6 h 20 min");
+    expect(fmtDuration(379.4)).toBe("6 h 19 min");
+    // The nudge is a millionth of a minute: 379.4999 is a real fraction under the half.
+    expect(fmtDuration(379.4999)).toBe("6 h 19 min");
+  });
 });
 
 describe("check row per mix", () => {
@@ -121,9 +130,9 @@ describe("hint and message helpers", () => {
 
   it("names a line by preset, and by dough when it is not the main one", () => {
     const loaf = { name: "Loaf", presetId: "loaf" };
-    expect(lineLabel({ ...loaf, key: "loaf", doughId: LEAN_DOUGH_ID, doughName: "Lean" })).toBe(
-      "Loaf",
-    );
+    expect(
+      lineLabel({ ...loaf, key: "loaf", doughId: LEAN_DOUGH_ID, doughName: "Main dough" }),
+    ).toBe("Loaf");
     expect(
       lineLabel({
         ...loaf,
@@ -137,7 +146,7 @@ describe("hint and message helpers", () => {
         ...loaf,
         key: "loaf@gone",
         doughId: LEAN_DOUGH_ID,
-        doughName: "Lean (dough gone not found)",
+        doughName: "Main dough (dough gone not found)",
       }),
     ).toBe("Loaf (dough gone not found)");
   });

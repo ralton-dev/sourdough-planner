@@ -1,7 +1,17 @@
-import { DEFAULT_DOUGHS, cloneDoughs } from "./doughs";
+import { DEFAULT_DOUGHS, ENRICHMENTS, INCLUSIONS, SWEETENERS, cloneDoughs } from "./doughs";
 import { DEFAULT_PRESETS, LEGACY_PRESETS, clonePresets, reconcileDefaults } from "./presets";
 import { DEFAULT_BULK_TABLE, type BulkRow } from "./timeline";
-import { DEFAULT_SETTINGS, LEAN_DOUGH_ID, type Dough, type Plan, type Preset } from "./types";
+import {
+  DEFAULT_SETTINGS,
+  LEAN_DOUGH_ID,
+  type Dough,
+  type DoughMethod,
+  type EnrichmentAddAt,
+  type InclusionAddAt,
+  type Plan,
+  type Preset,
+  type SplitAt,
+} from "./types";
 import { newId } from "./ids";
 
 const NS = "sourdough.v1";
@@ -91,18 +101,81 @@ export const isPresetList = (v: unknown): v is Preset[] =>
       p && typeof p === "object" && typeof p.id === "string" && typeof p.defaultWeight === "number",
   );
 
-/** Each dough has a string id and name and its enrichment and inclusion lists. */
-export const isDoughList = (v: unknown): v is Dough[] =>
-  Array.isArray(v) &&
-  v.every(
-    (d) =>
-      d &&
-      typeof d === "object" &&
-      typeof d.id === "string" &&
-      typeof d.name === "string" &&
-      Array.isArray(d.enrichments) &&
-      Array.isArray(d.inclusions),
-  );
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === "object" && !Array.isArray(v);
+const isFiniteNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const isString = (v: unknown): v is string => typeof v === "string";
+const isBoolean = (v: unknown): v is boolean => typeof v === "boolean";
+/** An optional field may be absent, never present with the wrong type (null included). */
+const optional = (v: unknown, ok: (x: unknown) => boolean) => v === undefined || ok(v);
+/** One of a table's keys. Tables typed `Record<Union, …>` stay in step with their union. */
+const keyOf = (table: object) => (v: unknown) => isString(v) && Object.hasOwn(table, v);
+
+const METHODS: Record<DoughMethod, true> = { auto: true, split: true, separate: true };
+const SPLIT_AT: Record<SplitAt, true> = { mix: true, fold1: true, fold2: true };
+const ENRICHMENT_AT: Record<EnrichmentAddAt, true> = { mix: true, "after-mix": true };
+const INCLUSION_AT: Record<InclusionAddAt, true> = {
+  mix: true,
+  fold1: true,
+  fold2: true,
+  lamination: true,
+  shape: true,
+};
+
+const isEnrichment = (v: unknown) =>
+  isRecord(v) &&
+  keyOf(ENRICHMENTS)(v.kind) &&
+  isFiniteNumber(v.pct) &&
+  optional(v.addAt, keyOf(ENRICHMENT_AT));
+
+const isInclusion = (v: unknown) =>
+  isRecord(v) &&
+  keyOf(INCLUSIONS)(v.kind) &&
+  isString(v.name) &&
+  isFiniteNumber(v.pct) &&
+  optional(v.addAt, keyOf(INCLUSION_AT)) &&
+  optional(v.soakerWaterPct, isFiniteNumber) &&
+  optional(v.note, isString);
+
+/**
+ * A dough as the app writes it, checked all the way down, since a bundle or a stored value can
+ * hold anything: known kinds and methods, finite amounts, strings where the planner reads text.
+ */
+export const isDough = (v: unknown): v is Dough =>
+  isRecord(v) &&
+  isString(v.id) &&
+  isString(v.name) &&
+  keyOf(METHODS)(v.method) &&
+  Array.isArray(v.enrichments) &&
+  v.enrichments.every(isEnrichment) &&
+  Array.isArray(v.inclusions) &&
+  v.inclusions.every(isInclusion) &&
+  optional(v.sweetness, (x) => isRecord(x) && keyOf(SWEETENERS)(x.kind) && isFiniteNumber(x.pct)) &&
+  optional(
+    v.tangzhong,
+    (x) => isRecord(x) && isFiniteNumber(x.flourPct) && isFiniteNumber(x.ratio),
+  ) &&
+  optional(
+    v.bake,
+    (x) =>
+      isRecord(x) &&
+      optional(x.tempC, isFiniteNumber) &&
+      optional(x.steam, isBoolean) &&
+      optional(x.wash, isString),
+  ) &&
+  optional(v.hydration, isFiniteNumber) &&
+  optional(v.salt, isFiniteNumber) &&
+  optional(v.bulkFactor, isFiniteNumber) &&
+  optional(v.splitAt, keyOf(SPLIT_AT)) &&
+  optional(v.icon, isString) &&
+  optional(v.notes, isString);
+
+/**
+ * A dough library, every dough valid. Like the other validators it judges the whole list: one bad
+ * dough and a stored library falls back to the defaults (the stored value is left as it is), and an
+ * import is refused rather than half taken.
+ */
+export const isDoughList = (v: unknown): v is Dough[] => Array.isArray(v) && v.every(isDough);
 
 export const isBulkTable = (v: unknown): v is BulkRow[] =>
   Array.isArray(v) && v.every((r) => r && typeof r === "object" && typeof r.tempC === "number");
