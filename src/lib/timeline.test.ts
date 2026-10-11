@@ -434,6 +434,123 @@ describe("§5 multi-dough timeline", () => {
     expect(at(unknown.steps[0]?.start)).toBe(40);
   });
 
+  describe("a main dough with no lean pieces only feeds its splits", () => {
+    /** Two loaves on jalapeño cheddar and nothing else: all of the main dough becomes them. */
+    const TWO_JALAPENO: ItemSelection[] = [
+      { presetId: "loaf", count: 2, doughId: "jalapeno-cheddar" },
+    ];
+    const ids = (t: Timeline) =>
+      [...t.steps, ...t.tracks.flatMap((tr) => tr.steps)].map((s) => s.id);
+
+    it("rests until the split, then the split dough carries on alone", () => {
+      const t = refTimeline({ mode: "items", items: TWO_JALAPENO, weightsIncludeAdditions: false });
+      expect(t.steps.map(run)).toEqual([["mix", 0, 10]]);
+      const base = t.tracks[0]!;
+      expect(base.method).toBe("base");
+      expect(base.steps.map((s) => s.id)).toEqual(["bulk"]);
+      const rest = base.steps[0]!;
+      expect([at(rest.start), rest.minutes, at(rest.end)]).toEqual([10, 40, 50]);
+      expect(at(rest.end)).toBe(at(stepOf(t, "split@jalapeno-cheddar")?.end));
+      expect(rest.label).toBe("Bulk ferment (until the split)");
+      expect(rest.note).toBe(
+        "The whole batch rests until it is split; the Jalapeño cheddar track carries on from there.",
+      );
+      expect(rest.fixed).toBe(true);
+      expect(at(base.benchEnd)).toBe(50);
+      expect(base.folds).toEqual([]); // the one before the split would be at the split itself
+      expect(ids(t)).not.toContain("divide");
+      expect(ids(t)).not.toContain("bench");
+      // 1200 g of plain dough on 677.966 g of flour: the add-ins ride on top (tick box off).
+      expect(stepOf(t, "split@jalapeno-cheddar")?.note).toBe(
+        "Work in 169 g mature cheddar, 54 g jalapeño (fresh, diced): this is all of the main dough.",
+      );
+      expect(trackOf(t, "jalapeno-cheddar")?.steps.map(run)).toEqual([
+        ["split@jalapeno-cheddar", 40, 10],
+        ["bulk@jalapeno-cheddar", 50, 260],
+        ["divide@jalapeno-cheddar", 310, 15],
+        ["bench@jalapeno-cheddar", 325, 25],
+      ]);
+      expect(trackOf(t, "jalapeno-cheddar")?.folds.map(at)).toEqual([70, 100, 130]);
+      expect(t.lanes.map((l) => l.steps[0]!.id)).toEqual(["shape:loaf@jalapeno-cheddar"]);
+      expect(at(t.lanes[0]!.steps[0]!.start)).toBe(350);
+      // No step shows the batch's own bulk, so an edit to it left from a plan with lean pieces
+      // cannot move the split unseen: the split runs on the guide.
+      const stale = refTimeline({
+        mode: "items",
+        items: TWO_JALAPENO,
+        weightsIncludeAdditions: false,
+        timelineOverrides: { bulk: 240 },
+      });
+      expect(stale.tracks[0]!.steps.map(run)).toEqual([["bulk", 10, 40]]);
+      expect(stepOf(stale, "bulk@jalapeno-cheddar")?.minutes).toBe(260);
+    });
+
+    it("keeps the whole main dough track once a lean loaf is back", () => {
+      const t = refTimeline({
+        mode: "items",
+        items: [...TWO_JALAPENO, { presetId: "loaf", count: 1 }],
+        weightsIncludeAdditions: false,
+      });
+      expect(t.tracks[0]!.steps.map(run)).toEqual([
+        ["bulk", 10, 300],
+        ["divide", 310, 15],
+        ["bench", 325, 25],
+      ]);
+      expect(t.tracks[0]!.steps[0]!.label).toBe("Bulk ferment");
+      expect(t.tracks[0]!.steps[0]!.fixed).toBeUndefined();
+      expect(t.tracks[0]!.folds.map(at)).toEqual([40, 70, 100, 130]);
+      expect(stepOf(t, "split@jalapeno-cheddar")?.note).toMatch(
+        /^Take \d+ g of dough for Jalapeño cheddar\. Work in .* Keep it separate from here on\.$/,
+      );
+    });
+
+    it("rests until the later of two splits, each portioned", () => {
+      const doughs = editDough("seeded", { splitAt: "fold2" });
+      const t = refTimeline(
+        {
+          mode: "items",
+          items: [
+            { presetId: "loaf", count: 1, doughId: "jalapeno-cheddar" },
+            { presetId: "loaf", count: 1, doughId: "seeded" },
+          ],
+        },
+        doughs,
+      );
+      const base = t.tracks[0]!;
+      expect(base.steps.map(run)).toEqual([["bulk", 10, 70]]);
+      expect(at(base.steps[0]!.end)).toBe(at(stepOf(t, "split@seeded")?.end));
+      expect(at(stepOf(t, "split@jalapeno-cheddar")?.end)).toBe(50);
+      expect(base.steps[0]!.note).toBe(
+        "The whole batch rests until it is split; the Jalapeño cheddar and Seeded tracks carry on from there.",
+      );
+      // The fold at 09:40 is still the main dough's: the seeded share is in it until 10:10.
+      expect(base.folds.map(at)).toEqual([40]);
+      expect(ids(t)).not.toContain("divide");
+      expect(stepOf(t, "split@jalapeno-cheddar")?.note).toMatch(
+        /^Take \d+ g of dough for Jalapeño cheddar\./,
+      );
+      expect(stepOf(t, "split@seeded")?.note).toMatch(/^Take \d+ g of dough for Seeded\./);
+    });
+
+    it("leaves a starter batch's spare in the main dough: still portioned, still undivided", () => {
+      // 250 g of starter holds 1125 g of flour; one pinned jalapeño loaf takes 285.7 g of it.
+      const t = refTimeline({
+        items: [{ presetId: "loaf", count: 1, weightOverride: 600, doughId: "jalapeno-cheddar" }],
+      });
+      expect(t.tracks[0]!.steps.map((s) => s.id)).toEqual(["bulk"]);
+      expect(stepOf(t, "split@jalapeno-cheddar")?.note).toMatch(
+        /^Take 506 g of dough for Jalapeño cheddar\./,
+      );
+      // Buns only, from the starter: the spare main dough bulks but nothing divides it.
+      const buns = refTimeline({
+        items: [{ presetId: "roll", count: 8, weightOverride: 120, doughId: "soft-bun" }],
+      });
+      expect(buns.tracks[0]!.steps.map(run)).toEqual([["bulk", 10, 300]]);
+      expect(buns.tracks[0]!.steps[0]!.fixed).toBeUndefined();
+      expect(at(buns.tracks[0]!.benchEnd)).toBe(310);
+    });
+  });
+
   /*
    * (G) Worked timeline B (start 09:00, 24 °C, hand mixed, REF settings, items mode):
    * loaf ×2 lean and roll ×8 at 120 g on soft-bun.

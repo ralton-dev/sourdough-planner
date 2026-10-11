@@ -83,6 +83,11 @@ export interface TimelineStep {
   minutes: number;
   defaultMinutes: number;
   note?: string;
+  /**
+   * Its length follows other steps, so it has none of its own to edit: the main dough's bulk
+   * when it only rests until its last split (no lean pieces).
+   */
+  fixed?: boolean;
 }
 
 export interface Lane {
@@ -251,9 +256,13 @@ export function buildTimeline(
     }
   }
   if (plan.feedStarter) prefix.push("feed", "Feed starter", 360, "4–8 h until it peaks, then mix.");
-  const tracks: DoughTrack[] = [];
-  const trackOf = new Map<string, DoughTrack>();
-  let base: { bulk: TimelineStep; folds: Date[] } | undefined;
+  // Lean has pieces when a line on it has any (a line on a missing dough reads lean); the main
+  // dough then bulks, divides and benches as it always did (§10). Without them it only feeds
+  // its splits, if it has any, and holds whatever spare a starter-mode batch leaves.
+  const leanPieces = result.allocation.some((l) => l.doughId === LEAN_DOUGH_ID && l.count > 0);
+  const splits = result.doughs.filter((d) => d.method === "split");
+  const restOnly = hasBase && !leanPieces && splits.length > 0;
+  let batch: { run: ReturnType<typeof chain>; bulk: TimelineStep; folds: Date[] } | undefined;
   if (hasBase) {
     if (plan.autolyse) {
       prefix.push("autolyse", "Autolyse", 45, "Flour plus most of the water. Rest.");
@@ -262,44 +271,78 @@ export function buildTimeline(
     const note = plainMixNote(plan.standMixer === true, baseMix?.addedWater ?? 0);
     prefix.push("mix", plan.standMixer ? "Mix (stand mixer)" : "Mix", mixMinutes, note);
 
-    // The base dough keeps today's ids and defaults (§10).
-    const lean = result.doughs.find((d) => d.method === "base");
-    const run = chain(prefix.end(), dur);
+    // The batch's bulk: the clock every split runs on. When the main dough only rests until its
+    // splits, no step shows this bulk, so an edit to it (left from a plan that had lean pieces)
+    // would move the splits unseen: they run on the guide instead.
+    const run = chain(prefix.end(), restOnly ? (_id, def) => def : dur);
     const bulk = run.push("bulk", "Bulk ferment", midpoint(est), BULK_NOTE);
-    run.push("divide", "Divide & pre-shape", 15, DIVIDE_NOTE);
-    const bench = run.push("bench", "Bench rest", 25);
-    const track: DoughTrack = {
-      doughId: LEAN_DOUGH_ID,
-      name: lean?.name ?? LEAN.name,
-      icon: lean?.icon,
-      method: "base",
-      reason: lean?.reason ?? "",
-      steps: run.steps,
-      folds: foldsDuring(bulk, foldCount),
-      bulk: { ...est, usedMinutes: bulk.minutes, doughFactor: 1 },
-      benchEnd: bench.end,
-    };
-    tracks.push(track);
-    trackOf.set(LEAN_DOUGH_ID, track);
-    base = { bulk, folds: track.folds };
+    if (leanPieces) {
+      run.push("divide", "Divide & pre-shape", 15, DIVIDE_NOTE);
+      run.push("bench", "Bench rest", 25);
+    }
+    batch = { run, bulk, folds: foldsDuring(bulk, foldCount) };
   }
 
   // Separate doughs mix one after another from the end of the prefix, in library order; split
-  // doughs leave the base bulk at their split point (§5).
+  // doughs leave the batch's bulk at their split point (§5).
+  const others: DoughTrack[] = [];
   let mixFrom = prefix.end();
   for (const d of result.doughs) {
     let track: DoughTrack | undefined;
     if (d.method === "separate") {
       track = separateTrack(d, mixOf(d.mixId), mixFrom, ctx);
       mixFrom = track.steps[0]?.end ?? mixFrom;
-    } else if (d.method === "split" && base) {
+    } else if (d.method === "split" && batch) {
       const splitAt = splitAtFor(findDough(d.doughId, doughs) ?? LEAN);
-      track = splitTrack(d, splitAt, base.bulk, base.folds, ctx);
+      const whole = !leanPieces && isWholeBase(d, baseMix);
+      track = splitTrack(d, splitAt, batch.bulk, batch.folds, whole, ctx);
     }
-    if (!track) continue;
-    tracks.push(track);
-    trackOf.set(d.doughId, track);
+    if (track) others.push(track);
   }
+
+  // The main dough first. Without lean pieces its bulk ends with the last split and nothing
+  // divides it: it has nothing left to divide.
+  const tracks: DoughTrack[] = [];
+  if (batch) {
+    const lean = result.doughs.find((d) => d.method === "base");
+    let steps = batch.run.steps;
+    let folds = batch.folds;
+    if (restOnly) {
+      const splitTracks = others.filter((t) => t.method === "split");
+      const last = splitTracks
+        .map((t) => t.steps[0]!)
+        .reduce((a, b) => (b.end.getTime() > a.end.getTime() ? b : a));
+      const minutes = (last.end.getTime() - batch.bulk.start.getTime()) / 60_000;
+      const names = splitTracks.map((t) => t.name);
+      const carry = names.length === 1 ? "track carries" : "tracks carry";
+      steps = [
+        {
+          ...batch.bulk,
+          label: "Bulk ferment (until the split)",
+          end: last.end,
+          minutes,
+          defaultMinutes: minutes,
+          note: `The whole batch rests until it is split; the ${listOf(names)} ${carry} on from there.`,
+          fixed: true,
+        },
+      ];
+      folds = batch.folds.filter((t) => t < last.start);
+    }
+    const bulkStep = steps[0]!;
+    tracks.push({
+      doughId: LEAN_DOUGH_ID,
+      name: lean?.name ?? LEAN.name,
+      icon: lean?.icon,
+      method: "base",
+      reason: lean?.reason ?? "",
+      steps,
+      folds,
+      bulk: { ...est, usedMinutes: bulkStep.minutes, doughFactor: 1 },
+      benchEnd: steps[steps.length - 1]!.end,
+    });
+  }
+  tracks.push(...others);
+  const trackOf = new Map(tracks.map((t) => [t.doughId, t] as const));
 
   // One lane per (preset, dough) line, in item order, from its own track's bench rest (decision 2).
   const lanes: Lane[] = [];
@@ -398,12 +441,13 @@ function splitTrack(
   splitAt: SplitAt,
   baseBulk: TimelineStep,
   baseFolds: Date[],
+  whole: boolean,
   ctx: Ctx,
 ): DoughTrack {
   const { est, dur } = ctx;
   const into = INTO_BULK_MIN[splitAt] ?? INTO_BULK_MIN.fold1;
   const run = chain(addMin(baseBulk.start, into), dur);
-  const split = run.push(`split@${d.doughId}`, "Split off", 10, splitNote(d));
+  const split = run.push(`split@${d.doughId}`, "Split off", 10, splitNote(d, whole));
   const factor = d.bulkFactor;
   const gone = (split.end.getTime() - baseBulk.start.getTime()) / 60_000;
   const left = (minutes: number) => Math.max(0, minutes * factor - gone);
@@ -457,10 +501,25 @@ function tangzhongNote(d: DoughResult, tz: TangzhongLines): string {
 }
 
 /** §5, decision 11: how much base dough to take, and everything that goes into it now. */
-function splitNote(d: DoughResult): string {
+function splitNote(d: DoughResult, whole: boolean): string {
   const work = phrases(d.additions.filter((a) => a.addAt !== "shape"));
+  if (whole) {
+    return work.length > 0
+      ? `Work in ${work.join(", ")}: this is all of the main dough.`
+      : "This is all of the main dough.";
+  }
   const workIn = work.length > 0 ? ` Work in ${work.join(", ")}.` : "";
   return `Take ${grams(d.portion ?? 0)} of dough for ${d.name}.${workIn} Keep it separate from here on.`;
+}
+
+/**
+ * Whether a split takes the whole main dough (there are no lean pieces to leave behind): its
+ * portion is the base mix's dough to the half gram, or it is the one dough the base mix holds.
+ */
+function isWholeBase(d: DoughResult, base: MixResult | undefined): boolean {
+  if (!base) return false;
+  const only = base.doughIds.length === 1 && base.doughIds[0] === d.doughId;
+  return only || (d.portion ?? 0) >= base.totalDough - 0.5;
 }
 
 /**
