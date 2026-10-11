@@ -1,5 +1,6 @@
 import type { Plan, Preset } from "../lib/types";
 import {
+  FOLD_INTERVAL_MIN,
   MAX_FOLD_COUNT,
   type BulkRow,
   type DoughTrack,
@@ -159,7 +160,8 @@ export function StepRow({
         <div className="label">{step.label}</div>
         {step.note && <div className="note">{step.note}</div>}
       </div>
-      {onChange ? <DurationInput step={step} onChange={onChange} /> : <div />}
+      {/* A fixed step's length follows other steps: an edit to it would be ignored. */}
+      {onChange && !step.fixed ? <DurationInput step={step} onChange={onChange} /> : <div />}
       {children}
     </div>
   );
@@ -171,24 +173,32 @@ const MIXER_FOLDS =
 /**
  * Under a track's bulk step: its folds and the guide range. A split dough's folds are base folds,
  * so they keep the base's numbers, and its guide is what is left of the bulk once it is split off.
+ * A fixed bulk (a main dough that only rests until its splits) is no bulk to guide: folds only.
  * The dough factor is named but not explained: the track does not say whether it came from the
  * sugar, the fat or the dough's own figure.
  */
 function BulkDetails({
   track,
+  step,
   timeline,
   plan,
 }: {
   track: DoughTrack;
+  step: TimelineStep;
   timeline: Timeline;
   plan: Plan;
 }) {
   const { bulk, method } = track;
-  const base = method === "split" ? timeline.tracks.find((t) => t.method === "base") : undefined;
-  const foldNumber = (fold: Date, i: number) => {
-    const k = base?.folds.findIndex((f) => f.getTime() === fold.getTime()) ?? -1;
-    return k >= 0 ? k + 1 : i + 1;
-  };
+  // The batch folds every 30 min from the main dough's bulk start, so a split's fold is numbered
+  // from there, even when the main dough's own list stops at the split.
+  const baseStart =
+    method === "split"
+      ? timeline.tracks.find((t) => t.method === "base")?.steps[0]?.start
+      : undefined;
+  const foldNumber = (fold: Date, i: number) =>
+    baseStart
+      ? Math.round((fold.getTime() - baseStart.getTime()) / (FOLD_INTERVAL_MIN * 60_000))
+      : i + 1;
   const factors = [
     ...(bulk.factor !== 1
       ? [
@@ -214,15 +224,17 @@ function BulkDetails({
           ))}
         </div>
       )}
-      <div className="note" style={{ gridColumn: "2 / -1" }}>
-        {/* Text nodes as the one-dough card had them, so the lean print does not move a pixel. */}
-        Guide: {fmtRange(bulk.minMinutes, bulk.maxMinutes)}
-        {method === "split" && " left"}
-        {" at"} {plan.settings.doughTempC} °C
-        {factors.length > 0 && ` (${factors.join(", ")}, a heuristic)`}
-        {target}
-        {plan.standMixer && MIXER_FOLDS}
-      </div>
+      {!step.fixed && (
+        <div className="note" style={{ gridColumn: "2 / -1" }}>
+          {/* Text nodes as the one-dough card had them, so the lean print does not move a pixel. */}
+          Guide: {fmtRange(bulk.minMinutes, bulk.maxMinutes)}
+          {method === "split" && " left"}
+          {" at"} {plan.settings.doughTempC} °C
+          {factors.length > 0 && ` (${factors.join(", ")}, a heuristic)`}
+          {target}
+          {plan.standMixer && MIXER_FOLDS}
+        </div>
+      )}
     </>
   );
 }
@@ -246,7 +258,9 @@ export function TimelineCard({
   const { inline, blocks } = placeTracks(timeline);
   const row = (s: TimelineStep, track?: DoughTrack) => (
     <StepRow key={s.id} step={s} ref={start} onChange={(m) => setOverride(s.id, m)}>
-      {track && isBulkStep(s) && <BulkDetails track={track} timeline={timeline} plan={plan} />}
+      {track && isBulkStep(s) && (
+        <BulkDetails track={track} step={s} timeline={timeline} plan={plan} />
+      )}
     </StepRow>
   );
   const lead = [
