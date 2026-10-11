@@ -137,18 +137,27 @@
     display: block;
     min-width: 0;
   }
+  /* Thinner rails, so seven doughs still leave the note its width. */
+  .timeline-card .order-row > .rails {
+    gap: 1px;
+  }
+  .timeline-card .order-row > .rails > .dough-rail {
+    border-left-width: 2px;
+  }
   .timeline-card .order-row .dur {
     float: right;
     margin-left: var(--sp-2);
   }
-  /* The dots stay on the label's first line; a long label wraps beside them. */
+  /* The dots lead the label's first line and a long label wraps beside them; only a run of
+     dots too long to leave the label room (three doughs at once) puts it on the next line. */
   .timeline-card .order-row .head {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: var(--sp-2);
+    gap: 0 var(--sp-2);
   }
   .timeline-card .order-row .label {
-    flex: 1;
+    flex: 1 1 4.5em;
     min-width: 0;
   }
   .timeline-card .order-row .tags {
