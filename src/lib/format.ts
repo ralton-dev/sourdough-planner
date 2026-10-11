@@ -1,4 +1,4 @@
-import type { Ingredients } from "./types";
+import { LEAN_DOUGH_ID, type AdditionLine, type AllocationLine, type Ingredients } from "./types";
 
 export const roundG = (n: number): number => Math.round(n);
 
@@ -18,6 +18,38 @@ export function fmtSalt(n: number, halfGram: boolean): string {
 
 export function fmtPct(frac: number, dp = 1): string {
   return `${(frac * 100).toFixed(dp)}%`;
+}
+
+/**
+ * A typical range as an editor hint shows it, from fractions of flour: "5–20%", "up to 5%"
+ * (a lower bound of 0), "0.02–0.03%". Up to two decimals, trailing zeros dropped. `unit` swaps
+ * the "%" for, say, " g per 100 g flour", which is the same number.
+ */
+export function fmtPctRange(range: readonly [number, number], unit = "%"): string {
+  const [lo, hi] = range;
+  const n = (frac: number) => String(Number((frac * 100).toFixed(2)));
+  if (!(lo > 0)) return `up to ${n(hi)}${unit}`;
+  if (n(lo) === n(hi)) return `${n(lo)}${unit}`;
+  return `${n(lo)}–${n(hi)}${unit}`;
+}
+
+/** "egg", "egg and milk", "egg, milk and butter". */
+export function joinAnd(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/**
+ * How messages name a line (decision 2): "Loaf" on the main dough, "Loaf (Jalapeño cheddar)" on
+ * any other, and "Loaf (dough <id> not found)" when its dough is missing from the library.
+ * Lanes carry the same fields, so a lane can be named the same way.
+ */
+export function lineLabel(
+  l: Pick<AllocationLine, "name" | "presetId" | "key" | "doughId" | "doughName">,
+): string {
+  if (l.doughId !== LEAN_DOUGH_ID) return `${l.name} (${l.doughName})`;
+  if (l.key === l.presetId) return l.name;
+  return `${l.name} (dough ${l.key.slice(l.presetId.length + 1)} not found)`;
 }
 
 export function fmtTime(d: Date): string {
@@ -50,19 +82,27 @@ export function fmtRange(minMinutes: number, maxMinutes: number): string {
   return `${fmtDuration(minMinutes)} – ${fmtDuration(maxMinutes)}`;
 }
 
-/** §5.4 — the displayed ingredients must add up to the displayed total, ±2 g. */
+/**
+ * §5.4 — the displayed lines of one mix must add up to its displayed total. Each line counts as it
+ * is shown: flour, water and starter to the gram, salt to the gram or half gram, and every addition
+ * line (a mix's enrichments, add-ins and tangzhong) to the gram. The four plain lines may be ±2 g
+ * out from rounding alone; each addition line can add half a gram more. A batch or a plain mix has
+ * no `additions`, so it checks exactly as before.
+ */
 export function checkRow(
-  r: Ingredients,
+  r: Ingredients & { additions?: readonly AdditionLine[] },
   halfGramSalt: boolean,
 ): { sum: number; total: number; diff: number; ok: boolean } {
+  const additions = r.additions ?? [];
   const sum =
     roundG(r.addedFlour) +
     roundG(r.addedWater) +
     roundG(r.starter) +
-    roundSalt(r.salt, halfGramSalt);
+    roundSalt(r.salt, halfGramSalt) +
+    additions.reduce((n, a) => n + roundG(a.grams), 0);
   const total = roundG(r.totalDough);
   const diff = sum - total;
-  return { sum, total, diff, ok: Math.abs(diff) <= 2 };
+  return { sum, total, diff, ok: Math.abs(diff) <= 2 + 0.5 * additions.length };
 }
 
 /** Local datetime-input value (no timezone suffix). */
