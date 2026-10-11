@@ -23,9 +23,6 @@ import {
 } from "./timelineRows";
 import "./timeline.css";
 
-// Kitchen mode reads these from here; they live with the In order model now (R5 may drop them).
-export { isBulkStep, placeTracks, trackBadge, trackTitle } from "./timelineRows";
-
 interface Props {
   plan: Plan;
   presets: Preset[];
