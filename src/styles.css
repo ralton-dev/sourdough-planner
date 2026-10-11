@@ -747,11 +747,12 @@ textarea {
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
-/* At least 300 px a lane (less only on a card narrower than that); a lone lane takes the width. */
+/* At least 280 px a lane, so three fit abreast on a desktop card (914 px) and a phone gets one a
+   row (less only on a card narrower than that); a lone lane takes the width. */
 .lanes {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   margin-top: 12px;
 }
 .lane {
