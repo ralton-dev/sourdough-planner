@@ -529,6 +529,11 @@ Raised in waves 1 and 2, deliberately not folded in:
     A merged row with one differing note shows every note (`timelineRows.ts:248-255`).
 15. The bake window ignores a proof edit (`timeline.ts:386-389`, lib; true before this plan); the
     top nav is 340 px wide, so 320 px phones zoom out (`.nav`, pre-existing).
+16. **The tangzhong is hard to find** (Ben, 2026-10-12). The editor shows the "Tangzhong" part only
+    on a dough that is not a split (`DoughsCard.tsx:729`, `(!split || tz)`), closed, as a checkbox
+    "Cook part of the flour first". Show the part on every dough; ticking it on a split or an
+    auto dough switches the method to "Mix separately" and the "Will be" callout says why
+    (decision 3: a tangzhong needs its own mix).
 
 ---
 
