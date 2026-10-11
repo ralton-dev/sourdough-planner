@@ -1,1 +1,208 @@
-/* Kitchen mode (KitchenMode.tsx): R5 of PLAN-redesign.md, print block included. */
+/* Kitchen mode (KitchenMode.tsx): R5 of PLAN-redesign.md. Screen only, so it has no print block.
+ *
+ * Every rule is under .kitchen and one of this sheet's own classes (decision 29): the sheet loads
+ * before styles.css, whose .kitchen rules would win a tie. The overlay itself (fixed, scrolling,
+ * its content at most 820 px wide and centred) is styles.css's .kitchen rule, and so is --scale:
+ * 1.3, which makes every token here one factor larger than on the plan page.
+ */
+
+/* The bar, kept in view: the plan's name with the wake lock's state under it, and Close; a rule
+   under it where the list scrolls away. A sticky box stops inside its scroller's padding, so the
+   overlay's 16 px at the top would leave a strip for the list to show through above the bar: the
+   bar takes that strip as its own padding. */
+.kitchen .kitchen-head {
+  position: sticky;
+  top: calc(-1 * var(--sp-4));
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: calc(-1 * var(--sp-4));
+  padding: calc(var(--sp-4) + var(--sp-2)) 0 var(--sp-2);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  font-size: var(--fs-md);
+}
+.kitchen .kitchen-head > .title {
+  min-width: 0;
+}
+/* The kitchen's two heading sizes are one: the title and each part's heading, a step above the
+   sections inside a part (their heads are --fs-lg). A long name wraps rather than push Close off. */
+.kitchen .kitchen-head h1,
+.kitchen .kitchen-part > h2 {
+  font-size: calc(var(--fs-lg) * 1.2);
+  overflow-wrap: break-word;
+}
+/* At most two lines: the bar stays in view, so a long name must not take a phone's screen. */
+.kitchen .kitchen-head h1 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.kitchen .kitchen-head .note-planner {
+  margin-top: var(--sp-1);
+}
+.kitchen .kitchen-head > .btn {
+  flex: none;
+}
+
+/* The plan's notes as written, under its name: the baker's own words. */
+.kitchen .kitchen-notes {
+  margin-top: var(--sp-3);
+}
+
+/* A part of the day: Ingredients, Division, Timeline. */
+.kitchen .kitchen-part {
+  font-size: var(--fs-md);
+}
+.kitchen .kitchen-part > h2 {
+  margin: var(--sp-6) 0 var(--sp-2);
+}
+
+/* Weighed figures at the weighed size, as on the card; the kitchen's scale makes them larger. */
+.kitchen .kitchen-part .ingredients td.v {
+  font-size: var(--num-md);
+}
+/* Pieces two abreast where both fit at the kitchen's count size, else one to a row. */
+.kitchen .kitchen-part .pieces {
+  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
+}
+.kitchen .kitchen-part .piece .big {
+  font-size: var(--num-lg);
+  font-size: min(var(--num-lg), 20.5cqi);
+}
+
+/*
+ * The day's jobs (decision 25). A row is the shared .step (its padding, rule, time and label)
+ * laid out as a gutter of rails, the time, and the job: the doughs' dots and the label, their
+ * names when they change from the row above, then the notes. The gutter has a slot per dough, in
+ * track order, so a dough's rail stays in one place; it reaches through the row's padding and rule
+ * so a running bulk reads as one line down the list.
+ */
+.kitchen .kitchen-rows .kitchen-row {
+  --row-pad: var(--sp-3);
+  position: relative;
+  grid-template-columns: auto 4.4em minmax(0, 1fr);
+  grid-template-areas: "rails t main";
+  gap: 0 var(--sp-3);
+  padding-block: var(--row-pad);
+  font-size: var(--fs-md);
+}
+.kitchen .kitchen-rows.bracketed .kitchen-row {
+  padding-right: var(--sp-4);
+}
+.kitchen .kitchen-row > .rails {
+  grid-area: rails;
+  align-self: stretch;
+  display: flex;
+  gap: 2px;
+  margin-block: calc(-1 * var(--row-pad)) calc(-1 * var(--row-pad) - 1px);
+}
+.kitchen .kitchen-row > .rails > .dough-rail {
+  min-height: 0;
+}
+.kitchen .kitchen-row > .rails > .off {
+  border-left-color: transparent;
+}
+.kitchen .kitchen-row > .t {
+  grid-area: t;
+}
+.kitchen .kitchen-row > .t > small {
+  font-size: var(--fs-sm);
+}
+.kitchen .kitchen-row > .main {
+  grid-area: main;
+  min-width: 0;
+}
+/* The dots lead the label's first line and a long label wraps beside them; only a run of dots too
+   long to leave the label room puts it on the next line. */
+.kitchen .kitchen-row .head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--sp-2);
+}
+.kitchen .kitchen-row .label {
+  flex: 1 1 4.5em;
+  min-width: 0;
+}
+.kitchen .kitchen-row.fold .label {
+  font-weight: 500;
+}
+.kitchen .kitchen-row .tags {
+  order: -1;
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  max-width: 100%;
+}
+/* A tag's name is read out with it but shown on the names line, which can wrap. */
+.kitchen .kitchen-row .tags .name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.kitchen .kitchen-row .names {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.kitchen .kitchen-row .names > span {
+  color: var(--dough);
+}
+.kitchen .kitchen-row .names > span + span::before {
+  content: ", ";
+  color: var(--muted);
+}
+.kitchen .kitchen-row .notes,
+.kitchen .kitchen-row .notes > * + * {
+  margin-top: var(--sp-1);
+}
+/* A stretch of rows whose hands-on steps clash: a bracket down the right edge. */
+.kitchen .kitchen-row.bracket::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: -1px;
+  right: 0;
+  width: var(--sp-1);
+  border-right: 2px solid var(--warn-ink);
+}
+.kitchen .kitchen-row.bracket.from::after {
+  top: var(--row-pad);
+  border-top: 2px solid var(--warn-ink);
+}
+.kitchen .kitchen-row.bracket.to::after {
+  bottom: var(--row-pad);
+  border-bottom: 2px solid var(--warn-ink);
+}
+
+/* The oven warnings under the list, at a note's size. */
+.kitchen .kitchen-oven {
+  margin-top: var(--sp-4);
+}
+.kitchen .kitchen-oven > .callout {
+  font-size: var(--fs-sm);
+}
+
+/* A phone: thinner rails, so seven doughs still leave the job its width, and closer columns. */
+@media screen and (max-width: 720px) {
+  .kitchen .kitchen-rows .kitchen-row {
+    column-gap: var(--sp-2);
+  }
+  .kitchen .kitchen-rows.bracketed .kitchen-row {
+    padding-right: var(--sp-3);
+  }
+  .kitchen .kitchen-row > .rails {
+    gap: 1px;
+  }
+  .kitchen .kitchen-row > .rails > .dough-rail {
+    border-left-width: 2px;
+  }
+}
