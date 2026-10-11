@@ -7,6 +7,7 @@ import {
   doughSalt,
   findDough,
   leanDough,
+  positive,
   resolveDoughId,
   separateReasons,
   sugarEquivalent,
@@ -39,8 +40,6 @@ const NOISE_G = 0.5;
 
 const pct = (f: number) => `${Math.round(f * 1000) / 10}%`;
 const g = (n: number) => `${Math.round(n)} g`;
-const positive = (n: number | undefined): n is number =>
-  n !== undefined && Number.isFinite(n) && n > 0;
 
 /**
  * §8 and PLAN-doughs §7 — soft validation. Never blocks; the plan still computes. `library` is
@@ -209,7 +208,7 @@ function doughWarnings(
     const extra = res.water - target * res.flour;
     if (extra > NOISE_G) {
       const wet = [...d.enrichments, ...(d.sweetness ? [d.sweetness] : [])]
-        .filter((e) => positive(e.pct) && (WATER_FRACTION[e.kind] ?? 0) > 0)
+        .filter((e) => positive(e.pct) > 0 && (WATER_FRACTION[e.kind] ?? 0) > 0)
         .sort(
           (a, b) => b.pct * (WATER_FRACTION[b.kind] ?? 0) - a.pct * (WATER_FRACTION[a.kind] ?? 0),
         );
@@ -245,7 +244,7 @@ function doughWarnings(
 function doughNotes(d: Dough, res: DoughResult, plan: Plan): PlanWarning[] {
   const out: PlanWarning[] = [];
   const info = (code: string, message: string) => out.push({ level: "info", code, message });
-  const inclusions = d.inclusions.filter((x) => positive(x.pct));
+  const inclusions = d.inclusions.filter((x) => positive(x.pct) > 0);
 
   const load = inclusions.reduce((n, x) => n + x.pct, 0);
   if (load > 0.35 + EPS) {
@@ -277,7 +276,7 @@ function doughNotes(d: Dough, res: DoughResult, plan: Plan): PlanWarning[] {
   }
 
   const sw = d.sweetness;
-  if (sw && positive(sw.pct)) {
+  if (sw && positive(sw.pct) > 0) {
     if (sw.kind === "erythritol" && sw.pct > 0.04 + EPS) {
       info(
         "erythritol-fit",
@@ -299,7 +298,7 @@ function doughNotes(d: Dough, res: DoughResult, plan: Plan): PlanWarning[] {
   }
 
   const butter = d.enrichments
-    .filter((e) => e.kind === "butter" && positive(e.pct))
+    .filter((e) => e.kind === "butter" && positive(e.pct) > 0)
     .reduce((n, e) => n + e.pct, 0);
   if (butter > 0.3 + EPS && !plan.standMixer) {
     info(

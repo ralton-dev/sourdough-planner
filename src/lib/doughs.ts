@@ -421,14 +421,14 @@ const SEPARATE_ENRICHMENTS: EnrichmentKind[] = ["egg", "yolk", "milk"];
 export function separateReasons(d: Dough): string[] {
   const out: string[] = [];
   for (const kind of SEPARATE_ENRICHMENTS) {
-    if (d.enrichments.some((e) => e.kind === kind && amount(e.pct) > 0)) {
+    if (d.enrichments.some((e) => e.kind === kind && positive(e.pct) > 0)) {
       out.push(ENRICHMENTS[kind].label.toLowerCase());
     }
   }
   if (d.sweetness && sugarEquivalent(d) > SEPARATE_SUGAR_EQUIVALENT) {
     out.push((SWEETENERS[d.sweetness.kind]?.label ?? d.sweetness.kind).toLowerCase());
   }
-  if (d.tangzhong && amount(d.tangzhong.flourPct) > 0) out.push("tangzhong");
+  if (d.tangzhong && positive(d.tangzhong.flourPct) > 0) out.push("tangzhong");
   if (d.hydration !== undefined) out.push("own hydration");
   if (d.salt !== undefined) out.push("own salt");
   return out;
@@ -456,7 +456,7 @@ export function doughSalt(d: Dough, base: Settings): number {
 export function sugarEquivalent(d: Dough): number {
   const sw = d.sweetness;
   if (!sw) return 0;
-  return amount(sw.pct) * (SWEETENERS[sw.kind]?.osmoticFactor ?? 0);
+  return positive(sw.pct) * (SWEETENERS[sw.kind]?.osmoticFactor ?? 0);
 }
 
 /**
@@ -468,7 +468,7 @@ export function defaultBulkFactor(d: Dough): number {
   const fatPct =
     d.enrichments
       .filter((e) => e.kind === "butter" || e.kind === "oil")
-      .reduce((sum, e) => sum + amount(e.pct), 0) * 100;
+      .reduce((sum, e) => sum + positive(e.pct), 0) * 100;
   const factor = 1 + 0.05 * Math.max(0, sugarPct - 3) + (fatPct >= 20 - EPS ? 0.1 : 0);
   return Math.min(2, Math.max(1, factor));
 }
@@ -482,24 +482,30 @@ export function bulkFactorFor(d: Dough): number {
 /** Σ pct × water fraction over the enrichments and the sweetness, per gram of flour. */
 export function enrichmentWater(d: Dough): number {
   return enrichmentsAndSweetness(d).reduce(
-    (sum, e) => sum + amount(e.pct) * (WATER_FRACTION[e.kind] ?? 0),
+    (sum, e) => sum + positive(e.pct) * (WATER_FRACTION[e.kind] ?? 0),
     0,
   );
 }
 
-/** k_dough (§4): dough grams per flour gram, add-ins out. 1 + H + s + Σ e·(1 − w). */
+/**
+ * k_dough (§4): dough grams per flour gram, add-ins out. A separate mix is 1 + H + s + Σ e·(1 − w):
+ * its added water gives way to the water its enrichments carry (decision 5). A split is
+ * 1 + H + s + Σ e: its portion of the base dough already holds all its water and cannot give any
+ * back, so the enrichments count whole.
+ */
 export function doughOnlyFactor(d: Dough, base: Settings): number {
-  const solids = enrichmentsAndSweetness(d).reduce(
-    (sum, e) => sum + amount(e.pct) * (1 - (WATER_FRACTION[e.kind] ?? 0)),
+  const split = effectiveMethod(d) === "split";
+  const enriched = enrichmentsAndSweetness(d).reduce(
+    (sum, e) => sum + positive(e.pct) * (split ? 1 : 1 - (WATER_FRACTION[e.kind] ?? 0)),
     0,
   );
-  return 1 + doughHydration(d, base) + doughSalt(d, base) + solids;
+  return 1 + doughHydration(d, base) + doughSalt(d, base) + enriched;
 }
 
 /** k (§4): dough grams per flour gram, add-ins in. k_dough + inclusions + soaker water. */
 export function compositionFactor(d: Dough, base: Settings): number {
   const addIns = d.inclusions.reduce(
-    (sum, x) => sum + amount(x.pct) + amount(x.soakerWaterPct ?? 0),
+    (sum, x) => sum + positive(x.pct) + positive(x.soakerWaterPct),
     0,
   );
   return doughOnlyFactor(d, base) + addIns;
@@ -523,7 +529,7 @@ export function usablePerFlour(
 export function enrichmentAddAt(e: Enrichment): EnrichmentAddAt {
   if (e.addAt) return e.addAt;
   const above = ENRICHMENTS[e.kind]?.afterMixAbove;
-  return above !== undefined && amount(e.pct) > above ? "after-mix" : "mix";
+  return above !== undefined && positive(e.pct) > above ? "after-mix" : "mix";
 }
 
 /** Decision 11 and §6: the inclusion's own add-at, else its kind's default. */
@@ -536,9 +542,9 @@ export function splitAtFor(d: Dough): SplitAt {
   return d.splitAt ?? "fold1";
 }
 
-/** A usable fraction: finite and positive, else 0. */
-function amount(pct: number): number {
-  return Number.isFinite(pct) && pct > 0 ? pct : 0;
+/** A usable amount: the number when it is finite and positive, else 0 (blank or a typo reads as none). */
+export function positive(n: number | undefined): number {
+  return n !== undefined && Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 function enrichmentsAndSweetness(d: Dough): { kind: EnrichmentKind | SweetKind; pct: number }[] {

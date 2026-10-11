@@ -31,6 +31,7 @@ import {
   inclusionAddAt,
   leanDough,
   lineKey,
+  positive,
   resolveDoughId,
   separateReasons,
   splitAtFor,
@@ -38,6 +39,9 @@ import {
 } from "./doughs";
 import { joinAnd, lineLabel } from "./format";
 import { collectWarnings } from "./warnings";
+
+/** The one rule for naming a line or a lane (decision 2); it lives with the formatters. */
+export { lineLabel };
 
 const EPS = 1e-9;
 
@@ -395,7 +399,7 @@ function shareFlour(
     : (needs.get(LEAN_DOUGH_ID)?.flour ?? 0);
 
   const shares: Share[] = [];
-  if (needs.has(LEAN_DOUGH_ID) || leanFlour > EPS || needs.size === 0) {
+  if (needs.has(LEAN_DOUGH_ID) || leanFlour > EPS) {
     const flour = leanFlour;
     shares.push({ dough: leanDough(), method: "base", flour, starter: starterFor(flour) });
   }
@@ -456,6 +460,9 @@ export function computePlan(plan: Plan, presets: Preset[], doughs: Dough[] = [])
       base = batchFromItems(lines, s);
     }
   }
+  // The base mix is absent when its total flour is 0, and the doughs on it with it: from the items
+  // when every line is on a separate dough, from the starter when the separate doughs take it all.
+  if (base && !(base.totalFlour > EPS)) base = undefined;
   const { mixes, results } = perMix(shares, base, s);
 
   const totals = sumMixes(mixes);
@@ -475,7 +482,8 @@ export function computePlan(plan: Plan, presets: Preset[], doughs: Dough[] = [])
 
 /**
  * §4 Mixes: the base mix (lean and every split, pooled) first, then one mix per separate dough in
- * library order; and one DoughResult per dough in use, in share order.
+ * library order; and one DoughResult per dough in use, in share order. Without a base mix there is
+ * no lean dough and no split.
  */
 function perMix(
   shares: Share[],
@@ -486,7 +494,7 @@ function perMix(
   const results: DoughResult[] = [];
   const splits: DoughResult[] = [];
   for (const share of shares) {
-    if (share.method === "base") continue;
+    if (share.method === "base" || (share.method === "split" && !base)) continue;
     const built = perDough(share, s);
     results.push(built.result);
     if (built.mix) mixes.push(built.mix);
@@ -560,7 +568,8 @@ function perDough(share: Share, s: Settings): { result: DoughResult; mix?: MixRe
 
   if (method === "split") {
     // Decision 9: a portion of the base dough, at the base hydration and salt, with its
-    // additions worked in at the split. Their water stays in: a mixed dough cannot give it back.
+    // additions worked in at the split. Their water stays in, as k_split counts it (§4), so the
+    // mass is F·k.
     const additions = additionLines(d, F, true);
     const additionsTotal = sumGrams(additions);
     const portion = F * (1 + s.hydration + s.salt);
@@ -634,7 +643,7 @@ function perDough(share: Share, s: Settings): { result: DoughResult; mix?: MixRe
     label: d.name,
     doughIds: [d.id],
     additions: weighed.additions,
-    mixMinutes: d.enrichments.some((e) => positive(e.pct)) ? 20 : 10,
+    mixMinutes: d.enrichments.some((e) => positive(e.pct) > 0) ? 20 : 10,
   };
   return { result, mix };
 }
@@ -657,7 +666,7 @@ function tangzhong(
   lines: AdditionLine[],
 ): { addedFlour: number; addedWater: number; additions: AdditionLine[] } {
   const tz = d.tangzhong;
-  if (!tz || !positive(tz.flourPct) || !positive(tz.ratio) || !(flour > 0)) {
+  if (!tz || positive(tz.flourPct) === 0 || positive(tz.ratio) === 0 || !(flour > 0)) {
     return { addedFlour, addedWater, additions: lines };
   }
   const tzFlour = Math.min(addedFlour, tz.flourPct * flour);
@@ -717,7 +726,7 @@ function additionLines(d: Dough, flour: number, split: boolean): AdditionLine[] 
     out.push({ ...line, grams: line.pct * flour });
   };
   for (const e of d.enrichments) {
-    if (!positive(e.pct)) continue;
+    if (positive(e.pct) === 0) continue;
     push({
       kind: e.kind,
       label: ENRICHMENTS[e.kind]?.label ?? e.kind,
@@ -726,7 +735,7 @@ function additionLines(d: Dough, flour: number, split: boolean): AdditionLine[] 
     });
   }
   const sw = d.sweetness;
-  if (sw && positive(sw.pct)) {
+  if (sw && positive(sw.pct) > 0) {
     push({
       kind: sw.kind,
       label: SWEETENERS[sw.kind]?.label ?? sw.kind,
@@ -738,7 +747,7 @@ function additionLines(d: Dough, flour: number, split: boolean): AdditionLine[] 
     const own = inclusionAddAt(x);
     const addAt = split && own !== "shape" ? "split" : own;
     const kindLabel = INCLUSIONS[x.kind]?.label ?? x.kind;
-    if (positive(x.pct)) {
+    if (positive(x.pct) > 0) {
       const note = x.note || INCLUSIONS[x.kind]?.note;
       push({
         kind: x.kind,
@@ -748,12 +757,13 @@ function additionLines(d: Dough, flour: number, split: boolean): AdditionLine[] 
         ...(note && { note }),
       });
     }
-    if (positive(x.soakerWaterPct)) {
+    const soaker = positive(x.soakerWaterPct);
+    if (soaker > 0) {
       const what = x.name.replace(/\s*\(.*\)\s*$/, "").trim() || kindLabel;
       push({
         kind: "soaker-water",
         label: `Soaker water (${what.toLowerCase()})`,
-        pct: x.soakerWaterPct,
+        pct: soaker,
         addAt,
       });
     }
@@ -773,13 +783,13 @@ function reasonFor(d: Dough, method: EffectiveMethod): string {
   if (method === "split") {
     const what = [
       ...d.enrichments
-        .filter((e) => positive(e.pct))
+        .filter((e) => positive(e.pct) > 0)
         .map((e) => (ENRICHMENTS[e.kind]?.label ?? e.kind).toLowerCase()),
-      ...(d.sweetness && positive(d.sweetness.pct)
+      ...(d.sweetness && positive(d.sweetness.pct) > 0
         ? [(SWEETENERS[d.sweetness.kind]?.label ?? d.sweetness.kind).toLowerCase()]
         : []),
       ...d.inclusions
-        .filter((x) => positive(x.pct))
+        .filter((x) => positive(x.pct) > 0)
         .map((x) => (INCLUSIONS[x.kind]?.label ?? x.kind).toLowerCase()),
     ];
     const worked = what.length > 0 ? `${joinAnd([...new Set(what)])} worked into ` : "";
@@ -821,10 +831,6 @@ function sumMixes(mixes: MixResult[]): Ingredients {
 }
 
 const sumGrams = (lines: AdditionLine[]) => lines.reduce((n, a) => n + a.grams, 0);
-
-/** A usable fraction: finite and positive. The dough helpers read anything else as 0. */
-const positive = (n: number | undefined): n is number =>
-  n !== undefined && Number.isFinite(n) && n > 0;
 
 function emptyIngredients(): Ingredients {
   return {

@@ -6,6 +6,7 @@ import {
   batchFromStarter,
   computePlan,
   inoculationForStarter,
+  lineLabel,
 } from "./calc";
 import { INCLUSIONS, cloneDoughs } from "./doughs";
 import { checkRow } from "./format";
@@ -32,7 +33,7 @@ const REF: Settings = {
 
 /**
  * The five presets as they stood at 187a90a, roll at 70 g. Decision 15: the §5.5 reference bake
- * is frozen on this copy, not on REF_PRESETS, so preset changes (WP-B) cannot move it.
+ * is frozen on this copy, not on DEFAULT_PRESETS, so preset changes (WP-B) cannot move it.
  */
 const REF_PRESETS: Preset[] = [
   {
@@ -621,6 +622,52 @@ describe("§4 multi-dough maths", () => {
   });
 
   /*
+   * A split dough with butter: example A's plan with the 600 g loaf on buttered (butter 8 %). A split
+   * cannot give the butter's water back, so k = 1 + 0.75 + 0.02 + 0.08 = 1.85 (not 1.8372).
+   *   flour 600 / 1.85 = 324.324; portion 574.054; butter 25.946; mass 600 = F·k
+   *   true hydration 0.75 + 0.08 × 0.16 = 0.7628
+   *   the loaf costs 574.054 of the 1991.25 g of base dough; the lean loaf clamps at 1000 g and
+   *   417.196 g is spare; lean flour 1125 − 324.324 = 800.676, mass 1991.25 − 574.054 = 1417.196
+   */
+  it("a split with butter weighs what was planned: its k counts the butter whole", () => {
+    const r = computePlan(
+      refPlan({
+        items: [
+          { presetId: "loaf", count: 1 },
+          { presetId: "loaf", count: 1, weightOverride: 600, doughId: "buttered" },
+        ],
+      }),
+      REF_PRESETS,
+      DOUGHS,
+    );
+    expect(r.mixes.map((m) => m.id)).toEqual(["base"]);
+    const plain = batchFromStarter(250, REF);
+    for (const k of INGREDIENTS) expect(mixOf(r, "base")?.[k]).toBe(plain[k]);
+    const d = doughOf(r, "buttered");
+    expect(d?.method).toBe("split");
+    near(d?.flour, 324.324);
+    near(d?.portion, 574.054);
+    near(addition(d, "butter")?.grams, 25.946);
+    expect(addition(d, "butter")?.addAt).toBe("split");
+    near(d?.mass, 600);
+    expect(d?.mass).toBeCloseTo((d?.flour ?? 0) * 1.85, 9);
+    near(d?.usable, 600);
+    expect(d?.trueHydration).toBeCloseTo(0.7628, 9);
+    expect(d?.reason).toBe("Split off at fold 1: butter worked into a portion of the main dough.");
+    expect(lineOf(r, "loaf@buttered")).toMatchObject({
+      weightEach: 600,
+      doughEach: 600,
+      additionsEach: 0,
+      pieceEach: 600,
+    });
+    near(lineOf(r, "loaf")?.weightEach, 1000);
+    near(r.spareOrShort, 417.196);
+    near(doughOf(r, LEAN_DOUGH_ID)?.flour, 800.676);
+    near(doughOf(r, LEAN_DOUGH_ID)?.mass, 1417.196);
+    expect(r.warnings).toEqual([]);
+  });
+
+  /*
    * (A, 1 % bench loss) The awkward fixture's bench loss on example A. Usable base dough
    * 1991.25 × 0.99 = 1971.338; the pinned jalapeño loaf costs 600 × 1.77/2.10 = 505.714 of it;
    * 865.623 is left, the lean loaf clamps at 1000 g and 465.623 g is spare.
@@ -1092,6 +1139,44 @@ describe("§4 multi-dough maths", () => {
   });
 
   /*
+   * The base mix is absent when its total flour is 0. From the items, eight 120 g rolls on soft-bun
+   * and nothing else leave nothing on it: one mix, one dough, and the batch is that mix.
+   */
+  it("items mode with every line on a separate dough has no base mix and no lean dough", () => {
+    const r = computePlan(
+      refPlan({
+        mode: "items",
+        items: [{ presetId: "roll", count: 8, weightOverride: 120, doughId: "soft-bun" }],
+      }),
+      REF_PRESETS,
+      DOUGHS,
+    );
+    expect(r.mixes.map((m) => m.id)).toEqual(["soft-bun"]);
+    expect(r.doughs.map((d) => d.doughId)).toEqual(["soft-bun"]);
+    const bun = r.mixes[0]!;
+    for (const k of INGREDIENTS) expect(r[k]).toBe(bun[k]);
+    near(r.totalDough, 960);
+    expect(checkRow(bun, false).ok).toBe(true);
+    expect(checkRow(bun, true).ok).toBe(true);
+    // Soft-bun has its own salt and nothing reads the batch's, so nothing to say about either.
+    expect(r.warnings).toEqual([]);
+  });
+
+  it("a plan with no flour has no mix; from the starter, all of it is spare base dough", () => {
+    const none = computePlan(refPlan({ mode: "items", items: [] }), REF_PRESETS, DOUGHS);
+    expect(none.mixes).toEqual([]);
+    expect(none.doughs).toEqual([]);
+    for (const k of INGREDIENTS) expect(none[k]).toBe(0);
+    expect(none.warnings).toEqual([]);
+
+    const spare = computePlan(refPlan({ items: [] }), REF_PRESETS, DOUGHS);
+    expect(spare.mixes.map((m) => m.id)).toEqual(["base"]);
+    expect(spare.doughs.map((d) => d.doughId)).toEqual([LEAN_DOUGH_ID]);
+    near(spare.doughs[0]?.usable, 1991.25);
+    near(spare.spareOrShort, 1991.25);
+  });
+
+  /*
    * Starter mode where the separate dough alone needs more than the batch: 100 g starter makes
    * 450 g of flour, eight 120 g soft-bun rolls need 521.853. The roll dough gets the whole batch
    * (no lean dough, no base mix) and the plan is short by 960 × 1.77/1.8396 − 450 × 1.77 = 127.179
@@ -1206,6 +1291,9 @@ describe("§4 multi-dough maths", () => {
     expect(doughOf(r, "egg-split")?.method).toBe("split");
     expect(r.mixes.map((m) => m.id)).toEqual(["base"]);
     expect(addition(doughOf(r, "egg-split"), "egg")?.addAt).toBe("split");
+    // k = 1.77 + 0.10: the egg counts whole, so the loaf is the 600 g planned (F 320.856).
+    near(doughOf(r, "egg-split")?.flour, 320.856);
+    near(doughOf(r, "egg-split")?.mass, 600);
   });
 
   it("D, again: a forced split names its own hydration, salt and tangzhong too", () => {
@@ -1269,6 +1357,38 @@ describe("§4 multi-dough maths", () => {
       doughId: LEAN_DOUGH_ID,
       doughName: "Lean (dough deleted-dough not found)",
     });
+  });
+});
+
+describe("the line naming rule (decision 2)", () => {
+  it("names a lane the way it names a line, imported from calc as the timeline does", () => {
+    const lane = {
+      key: "loaf@jalapeno-cheddar",
+      presetId: "loaf",
+      name: "Loaf",
+      doughId: "jalapeno-cheddar",
+      doughName: "Jalapeño cheddar",
+      proof: "either",
+      steps: [],
+    };
+    expect(lineLabel(lane)).toBe("Loaf (Jalapeño cheddar)");
+    expect(lineLabel({ ...lane, key: "loaf", doughId: LEAN_DOUGH_ID, doughName: "Lean" })).toBe(
+      "Loaf",
+    );
+    expect(
+      lineLabel({
+        ...lane,
+        key: "loaf@x",
+        doughId: LEAN_DOUGH_ID,
+        doughName: "Lean (dough x not found)",
+      }),
+    ).toBe("Loaf (dough x not found)");
+    const r = computePlan(
+      refPlan({ items: [{ presetId: "loaf", count: 1, doughId: "x" }] }),
+      REF_PRESETS,
+      DOUGHS,
+    );
+    expect(lineLabel(r.allocation[0]!)).toBe("Loaf (dough x not found)");
   });
 });
 

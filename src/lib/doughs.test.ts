@@ -17,6 +17,7 @@ import {
   inclusionAddAt,
   leanDough,
   lineKey,
+  positive,
   resolveDoughId,
   separateReasons,
   sugarEquivalent,
@@ -213,7 +214,23 @@ describe("composition (§4)", () => {
   it("keeps a split dough on the batch hydration and salt (decision 9)", () => {
     const wetSplit: Dough = { ...byId("buttered"), hydration: 0.9, salt: 0.03 };
     expect(compositionFactor(wetSplit, REF)).toBe(compositionFactor(byId("buttered"), REF));
-    expect(compositionFactor(byId("buttered"), REF)).toBeCloseTo(1.77 + 0.08 * 0.84, 12);
+    expect(compositionFactor(byId("buttered"), REF)).toBeCloseTo(1.85, 12);
+  });
+
+  it("counts a split dough's enrichments whole: its portion cannot give water back", () => {
+    // Butter 8 % into a portion of the 75 % base: 1 + 0.75 + 0.02 + 0.08, not 0.08 × (1 − 0.16).
+    expect(doughOnlyFactor(byId("buttered"), REF)).toBeCloseTo(1.85, 12);
+    expect(usablePerFlour(byId("buttered"), REF, {})).toBeCloseTo(1.85, 12);
+    expect(usablePerFlour(byId("buttered"), REF, { weightsIncludeAdditions: false })).toBeCloseTo(
+      1.85,
+      12,
+    );
+    const honeySplit = bare({ sweetness: { kind: "honey", pct: 0.04 } });
+    expect(effectiveMethod(honeySplit)).toBe("split");
+    expect(doughOnlyFactor(honeySplit, REF)).toBeCloseTo(1.77 + 0.04, 12);
+    // The same butter in a separate mix takes its water off the water line.
+    const separate: Dough = { ...byId("buttered"), method: "separate" };
+    expect(doughOnlyFactor(separate, REF)).toBeCloseTo(1.77 + 0.08 * 0.84, 12);
   });
 
   it("reads the batch settings for lean", () => {
@@ -227,6 +244,17 @@ describe("composition (§4)", () => {
     expect(usablePerFlour(jal, REF, { weightsIncludeAdditions: true })).toBeCloseTo(2.1, 12);
     expect(usablePerFlour(jal, REF, { weightsIncludeAdditions: false })).toBeCloseTo(1.77, 12);
     expect(usablePerFlour(jal, { ...REF, benchLoss: 0.01 }, {})).toBeCloseTo(2.1 * 0.99, 12);
+  });
+});
+
+describe("usable amounts", () => {
+  it("reads a blank, a negative or a typo as none", () => {
+    expect(positive(0.25)).toBe(0.25);
+    expect(positive(0)).toBe(0);
+    expect(positive(-0.1)).toBe(0);
+    expect(positive(Number.NaN)).toBe(0);
+    expect(positive(Number.POSITIVE_INFINITY)).toBe(0);
+    expect(positive(undefined)).toBe(0);
   });
 });
 
