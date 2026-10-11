@@ -1157,3 +1157,10 @@ Raised during execution, deliberately not folded in:
     "→ 17:15" while the clash puts the second loaf at 17:15–18:00 (WP-H).
 18. **`allocate(…, ctx = LEAN_CONTEXT)`** keeps a default: the app never calls `allocate`
     and six older tests call it with three arguments; not a decision-21 default, left as is.
+19. **A main dough with no pieces of its own** (found by Ben on the running app, fixed in
+    `6270483`, `603517d`, `1b6bcf3`, `7f61877`): it now rests "until the split" with no divide
+    or bench, the card says what becomes of it, and a whole-dough split reads "Work in the
+    add-ins". Left over: a saved `bulk` override on such a plan is ignored and, with the
+    duration box hidden, cannot be reset from the card; either drop it on save or let the
+    split's bulk show it. And `DoughResult` could carry `splitAt` so the card stops reading the
+    split point out of the reason text.
