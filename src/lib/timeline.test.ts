@@ -872,30 +872,6 @@ describe("§5 multi-dough timeline", () => {
   });
 });
 
-// deprecated aliases: WP-G deletes
-describe("deprecated aliases of tracks[0] (WP-G deletes)", () => {
-  it("equal tracks[0].folds and tracks[0].bulk", () => {
-    const t = build(plan({ foldCount: 3 }));
-    expect(t.folds).toBe(t.tracks[0]!.folds);
-    expect(t.bulk).toBe(t.tracks[0]!.bulk);
-    expect(t.folds.map(at)).toEqual([40, 70, 100]);
-    expect(t.bulk).toEqual({
-      minMinutes: 270,
-      maxMinutes: 330,
-      factor: 1,
-      usedMinutes: 300,
-      doughFactor: 1,
-    });
-    // With no main mix they follow the first track present; with no track at all, nothing.
-    const items = [{ presetId: "roll", count: 8, weightOverride: 120, doughId: "soft-bun" }];
-    const buns = build(plan({ settings: REF, mode: "items", items }));
-    expect(buns.folds).toBe(buns.tracks[0]!.folds);
-    expect(buns.bulk).toBe(buns.tracks[0]!.bulk);
-    const empty = build(plan({ settings: REF, mode: "items", items: [] }));
-    expect([empty.folds, empty.bulk.usedMinutes]).toEqual([[], 0]);
-  });
-});
-
 // Pin H, the tripwire: the all-lean plan must not move a minute (§10). It passed before WP-D and
 // keeps passing with the base steps split between `steps` (the prefix) and `tracks[0]`.
 describe("the all-lean plan does not move (pin H)", () => {

@@ -144,10 +144,6 @@ export interface Timeline {
   lanes: Lane[];
   ovenWarnings: string[];
   end: Date;
-  /** @deprecated alias of tracks[0].folds; WP-G deletes it with the UI that reads it. */
-  folds: Date[];
-  /** @deprecated alias of tracks[0].bulk; WP-G deletes it with the UI that reads it. */
-  bulk: BulkEstimate & { usedMinutes: number };
 }
 
 /**
@@ -332,7 +328,6 @@ export function buildTimeline(
     end = later(end, run.end());
   }
 
-  const first = tracks[0];
   return {
     steps: prefix.steps,
     tracks,
@@ -341,8 +336,6 @@ export function buildTimeline(
     lanes,
     ovenWarnings: ovenConflicts(lanes),
     end,
-    folds: first?.folds ?? [],
-    bulk: first?.bulk ?? { ...est, usedMinutes: 0 },
   };
 }
 
