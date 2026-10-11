@@ -137,7 +137,9 @@ chooses the mechanism from what the dough contains, and says why in the plan it 
     instructions reflect it, which is what this decision specifies.
 21. **Waves 1–3 never break `App.tsx`.** Every new prop or parameter added before WP-H is
     optional with a lean default (`doughs = []`), so the app compiles and behaves exactly as
-    today until wired. WP-H makes them required and deletes the defaults.
+    today until wired. WP-H makes them required and deletes the defaults. (WP-E's
+    `PresetsPage` shows no dough UI at all while its `doughs`/`onDoughs` props are absent,
+    rather than an empty card with dead buttons: the same contract seen from the page.)
 22. **Deletion belongs to the package that supersedes.** Every package that replaces a
     symbol deletes it in the same commit and reports per symbol: deleted, or kept with the
     name of who still calls it. "Nothing calls it any more, so I left it" is not an answer.
@@ -284,7 +286,8 @@ export interface MixResult extends Ingredients {
 `AllocationLine` gains `key: string`, `doughId: string`, `doughName: string`,
 `doughEach: number` (plain dough per piece), `additionsEach: number` and `pieceEach: number`
 (the finished piece: `weightEach` with the tick box on, `weightEach + additionsEach` with it
-off, decision 6). `BatchResult` gains
+off, decision 6); `AllocationLine.subtotal` was deleted in wave 3 (no reader left, and with
+the tick box off it was dough grams). `BatchResult` gains
 `mixes: MixResult[]` and `doughs: DoughResult[]`; its inherited `Ingredients` fields become
 **totals across mixes** (one mix → unchanged values, so every existing test still holds).
 
@@ -356,7 +359,11 @@ in proportion. A mix whose total flour is 0 is absent: items mode with no lean o
 starter mode when the separate doughs take the whole batch, or no flour at all. It is omitted
 from `mixes` and its doughs from `doughs` (a base mix takes its split doughs with it; they can
 only be empty too). Otherwise starter mode keeps lean as the home of the spare flour. Spare is reported as `flour × k_base × (1 − L)`, the usable base
-dough the old code reported. `checkRow` allows ±2 g plus 0.5 g per addition line.
+dough the old code reported. `checkRow` allows ±2 g plus 0.5 g per addition line. The
+zero-flour rule applies to every mix, not only the base. Two item lines that resolve to the
+same key (a preset's own dough changed to one a row already names) are merged in
+`resolveLines`: counts summed, the first weight override kept; with different overrides the
+later keys get `#2`, `#3` so nothing is dropped (wave 3).
 
 **Worked example A3 — a split enrichment** (REF settings, starter mode 250 g; `loaf` ×1 at
 600 on `buttered`, butter 8 % split, beside the flexing lean loaf of example A): k = 1 + 0.75
@@ -501,6 +508,13 @@ thick paste that holds a line. Cool to room temperature before it goes in. Made 
 before and kept in the fridge is fine: bring it back to room temperature. If it waits more
 than about two hours (it will while the starter feeds), keep it in the fridge." `mix@soft-sandwich`
 then opens with "Cooled tangzhong in with the milk and water," before the enriched routine.
+
+The "reserve ~20 g water for the salt" sentence belongs to the plain mix note (the base mix,
+or a separate dough with no enrichments) and appears only when that mix's water line holds
+20 g or more; enriched mixes carry the enriched routine instead. The Ingredients card follows
+the same rule. A plan whose batch has no flour (a starter of 0 g while the field is being
+cleared) has no mixes and no doughs while its item lines remain; a lane whose dough has no
+result falls back to the first track.
 
 Folds: base and separate tracks get `foldCount` folds at 30-min intervals from their own
 bulk start (existing rule); a split track lists the base folds that fall after its split.
@@ -857,9 +871,9 @@ its add-ins, pieces grouped by dough with their composition, and the bake notes.
 
 **Acceptance:** example A renders one table and two loaf pieces in two groups; A2 shows a
 712 g piece with its 600 g dough line; example B renders two tables whose check rows are ✓;
-B3 renders the tangzhong block, 21.7 g flour and 108.4 g water, above the soft-sandwich
-table; adding `loaf` twice yields plain then
-jalapeño-cheddar; the print of the plan page (headless Chrome, see §12) splits no `.piece`
+B3 renders the tangzhong block, 22 g flour and 108 g water (whole grams, like every line),
+above the soft-sandwich table; adding `loaf` twice yields the main dough then Soft bun dough
+(the rule: the preset's own dough, then main, then library order); the print of the plan page (headless Chrome, see §12) splits no `.piece`
 or table across pages.
 
 Owns: `src/components/ItemsCard.tsx`, `src/components/IngredientsCard.tsx`,
@@ -915,11 +929,13 @@ says what the maths is now.
   after `DivisionCard`; export includes doughs; import replaces doughs (confirm text updated).
 - Make every decision-21 default required: `computePlan`'s `doughs`, `buildTimeline`'s
   `doughs` and `result`, `ItemsCard.doughs`, `PresetsPage.doughs`/`onDoughs`,
-  `exportBundle`'s input (`Omit<ExportBundle, "app" | "version" | "exportedAt" | "doughs"> &
+  `TimelineCard.starterTotal`, `exportBundle`'s input (`Omit<ExportBundle, "app" | "version" | "exportedAt" | "doughs"> &
 { doughs: Dough[] }`; `ExportBundle.doughs?` itself stays optional for version-1 files, and
   `parseBundle` keeps its "version 2 without doughs" path). Delete the defaults and report each.
 - `SettingsCard.tsx`: the hydration and salt hints say these are the main dough's; variants
-  set their own on the Presets page. `SavedPlans.tsx`: the summary line adds "· 2 doughs" when more than
+  set their own on the Presets page. `FeedHelper.tsx`: the target field is set once at mount;
+  re-sync it when the incoming target changes, leaving a typed value alone (the `seen` pattern
+  in `NumberField`). `SavedPlans.tsx`: the summary line adds "· 2 doughs" when more than
   one dough is in use.
 - `README.md`: "Modes" mentions doughs; "The maths" gains §4 in prose with worked example A;
   new "Doughs and variations" section (split vs separate, what counts as water, the add-ins
@@ -934,7 +950,7 @@ shows only `ExportBundle.doughs?` in `storage.ts`; a fresh browser seeds five do
 full gate (§12) passes; the PDFs are attached to the hand-back.
 
 Owns: `src/App.tsx`, `src/components/SettingsCard.tsx`, `src/components/SavedPlans.tsx`,
-`README.md`, plus the one-line signature edits in `calc.ts`, `timeline.ts`, `storage.ts`,
+`src/components/FeedHelper.tsx`, `README.md`, plus the one-line signature edits in `calc.ts`, `timeline.ts`, `storage.ts`,
 `ItemsCard.tsx`, `PresetsPage.tsx` that make the defaults required (wave 4, nobody else is
 editing).
 Size **M**. Depends: WP-B, WP-E, WP-F, WP-G.
@@ -994,6 +1010,13 @@ Rough total: four waves, eight packages.
 the timeline, not a step id, not a lane key, not a saved plan's override, not a v1 export.
 Every other number moves only for the reasons decisions 5–14 name. Pin H and the frozen
 `REF_PRESETS` are the tripwire; WP-H's "a `187a90a` export imports" is the second.
+
+Accepted movement, wave 3: the division card prints its pieces in block flow (inline-block,
+four to a row) instead of flex, because Firefox does not fragment flex containers, so the lean
+print's first page differs from the `187a90a` baseline in piece widths and in one wrap ("from
+600 g" now stays on a line); the timeline pages are pixel-identical. On screen the piece count
+is capped with a size container so "1 × 1000 g" no longer overflows at 760–1000 px. The
+warnings' wording also moved ("short by X g of main dough"). Nothing numeric moved.
 
 **Hunt for the assumption rather than assuming its absence.** The assumption is "there is
 one dough", and it is written in more places than the evidence table lists. Known sites to
@@ -1094,3 +1117,21 @@ Raised during execution, deliberately not folded in:
    `calc.ts` and `timeline.ts` together.
 3. **One-time upgrade notice** when an unedited roll is refreshed to 100 g (WP-B). Declined
    for now: decision 14's intent, and Ben edits his own presets.
+4. **Suggestions are main-dough grams.** "Short by X g", "X g spare" and "drop one Roll (Soft
+   bun dough) to free 115 g" count base dough; a 120 g enriched roll frees 115 g of it. Say so
+   in `suggest()` (WP-C).
+5. **`isPresetList` is shallow** (since `187a90a`): a stored preset without a name would crash
+   the warnings. Deepen it the way `isDoughList` was (WP-C).
+6. **One reason sentence.** `reasonFor` in `calc.ts`, `split-needs-mix` in `warnings.ts` and
+   the editor's "Will be:" line each word the separate-vs-split reason; one helper in
+   `doughs.ts` would serve all three, and `LABEL_CHECK` belongs next to `NO_SUGAR` (WP-E).
+7. **A preset's note can contradict a dough's bake.** The shape step carries the preset's
+   note, so a lean roll on `soft-bun` says "Steam 8 min" while its lane bakes at 190 °C without
+   steam (WP-G). Either a dough-aware note or a hint in the editor.
+8. **Track order is library order**, so with three or more doughs a split block can list after
+   a mix that starts later; listing splits straight after the main dough is one option (WP-G).
+9. **Why the factor.** The guide says "×1.15 for this dough, a heuristic"; a `bulkFactorWhy(d)`
+   could say sugar, fat or "as set" (WP-G).
+10. **Firefox print is untested by tooling** (no headless print-to-PDF); the print CSS uses
+    block flow and atomic blocks only, which Firefox fragments correctly, and Ben's own print
+    is the real check.
