@@ -98,7 +98,6 @@ export interface AllocationLine {
   additionsEach: number;
   /** The finished piece: `weightEach` with the tick box on, `weightEach + additionsEach` off. */
   pieceEach: number;
-  subtotal: number;
   adjusted: boolean;
   belowMin: boolean;
   pinned: boolean;

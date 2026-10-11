@@ -108,10 +108,13 @@ export function collectWarnings(
   for (const l of r.allocation) {
     if (l.belowMin) {
       const p = presets.find((x) => x.id === l.presetId);
+      // Decision 6: with the tick box off the planned weight is plain dough, not the finished piece.
+      const ofDough =
+        plan.weightsIncludeAdditions === false && l.additionsEach > 0 ? " of dough" : "";
       out.push({
         level: "warn",
         code: "below-min",
-        message: `${lineLabel(l)} at ${Math.round(l.weightEach)} g is below its ${p?.minWeight ?? "?"} g minimum. Drop a piece, unpin it, or lower the minimum in presets.`,
+        message: `${lineLabel(l)} at ${Math.round(l.weightEach)} g${ofDough} is below its ${p?.minWeight ?? "?"} g minimum. Drop a piece, unpin it, or lower the minimum in presets.`,
       });
     }
   }

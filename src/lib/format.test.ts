@@ -149,5 +149,17 @@ describe("hint and message helpers", () => {
         doughName: "Main dough (dough gone not found)",
       }),
     ).toBe("Loaf (dough gone not found)");
+    // A later line on a key already taken is keyed #2 and named like the first.
+    expect(
+      lineLabel({ ...loaf, key: "loaf#2", doughId: LEAN_DOUGH_ID, doughName: "Main dough" }),
+    ).toBe("Loaf");
+    expect(
+      lineLabel({
+        ...loaf,
+        key: "loaf@gone#3",
+        doughId: LEAN_DOUGH_ID,
+        doughName: "Main dough (dough gone not found)",
+      }),
+    ).toBe("Loaf (dough gone not found)");
   });
 });

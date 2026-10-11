@@ -42,14 +42,16 @@ export function joinAnd(items: readonly string[]): string {
 /**
  * How messages name a line (decision 2): "Loaf" on the main dough, "Loaf (Jalapeño cheddar)" on
  * any other, and "Loaf (dough <id> not found)" when its dough is missing from the library.
- * Lanes carry the same fields, so a lane can be named the same way.
+ * Lanes carry the same fields, so a lane can be named the same way. A later line on a key already
+ * taken (calc keys it #2, #3) is named like the first.
  */
 export function lineLabel(
   l: Pick<AllocationLine, "name" | "presetId" | "key" | "doughId" | "doughName">,
 ): string {
   if (l.doughId !== LEAN_DOUGH_ID) return `${l.name} (${l.doughName})`;
-  if (l.key === l.presetId) return l.name;
-  return `${l.name} (dough ${l.key.slice(l.presetId.length + 1)} not found)`;
+  const key = l.key.replace(/#\d+$/, "");
+  if (key === l.presetId) return l.name;
+  return `${l.name} (dough ${key.slice(l.presetId.length + 1)} not found)`;
 }
 
 export function fmtTime(d: Date): string {

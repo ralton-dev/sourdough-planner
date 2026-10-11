@@ -17,6 +17,7 @@ import {
   type BatchResult,
   type Dough,
   type Ingredients,
+  type ItemSelection,
   type Plan,
   type Preset,
   type Settings,
@@ -1362,6 +1363,93 @@ describe("§4 multi-dough maths", () => {
   });
 });
 
+describe("lines that reach one key (decision 2)", () => {
+  /** REF_PRESETS with the loaf preset made on soft-bun, so a plain loaf row is a soft-bun loaf. */
+  const SOFT_LOAF = REF_PRESETS.map((p) => (p.id === "loaf" ? { ...p, doughId: "soft-bun" } : p));
+  const items = (rows: ItemSelection[]) =>
+    computePlan(refPlan({ mode: "items", items: rows }), SOFT_LOAF, DOUGHS);
+
+  it("merges rows at one weight into one line, the counts summed (the merged case)", () => {
+    // A row on the preset's own dough beside a row naming it: both are loaf@soft-bun.
+    const r = items([
+      { presetId: "loaf", count: 1 },
+      { presetId: "loaf", count: 2, doughId: "soft-bun" },
+    ]);
+    expect(r.allocation.map((l) => [l.key, l.count, l.weightEach])).toEqual([
+      ["loaf@soft-bun", 3, 600],
+    ]);
+    near(doughOf(r, "soft-bun")?.flour, 978.474); // 1800 / 1.8396
+  });
+
+  it("keeps rows at different weights apart, the later keyed #2, #3 (the suffixed case)", () => {
+    const r = items([
+      { presetId: "loaf", count: 1 },
+      { presetId: "loaf", count: 2, weightOverride: 700, doughId: "soft-bun" },
+      { presetId: "loaf", count: 1, weightOverride: 500, doughId: "soft-bun" },
+      { presetId: "loaf", count: 1, weightOverride: 700, doughId: "soft-bun" },
+    ]);
+    expect(r.allocation.map((l) => [l.key, l.count, l.weightEach, l.pinned])).toEqual([
+      ["loaf@soft-bun", 1, 600, false],
+      ["loaf@soft-bun#2", 3, 700, true],
+      ["loaf@soft-bun#3", 1, 500, true],
+    ]);
+    near(doughOf(r, "soft-bun")?.flour, 1739.509); // (600 + 3 × 700 + 500) / 1.8396
+    expect(r.allocation.map(lineLabel)).toEqual(Array(3).fill("Loaf (Soft bun dough)"));
+  });
+
+  it("does the same on the main dough, where a key is the preset id", () => {
+    const r = computePlan(
+      refPlan({
+        mode: "items",
+        items: [
+          { presetId: "loaf", count: 1 },
+          { presetId: "loaf", count: 1, doughId: LEAN_DOUGH_ID },
+          { presetId: "loaf", count: 1, weightOverride: 700 },
+        ],
+      }),
+      REF_PRESETS,
+      DOUGHS,
+    );
+    expect(r.allocation.map((l) => [l.key, l.count, l.weightEach])).toEqual([
+      ["loaf", 2, 600],
+      ["loaf#2", 1, 700],
+    ]);
+    expect(r.allocation.map(lineLabel)).toEqual(["Loaf", "Loaf"]);
+    near(r.totalFlour, 1073.446); // (1200 + 700) / 1.77
+    // The planned weight is the line's own: no subtotal field to read the wrong one from.
+    expect(r.allocation[0]).not.toHaveProperty("subtotal");
+  });
+});
+
+describe("a mix with no flour (§4)", () => {
+  it("is absent with its dough, separate mixes included", () => {
+    const r = computePlan(
+      refPlan({
+        starterWeight: 0,
+        items: [
+          { presetId: "loaf", count: 1 },
+          { presetId: "roll", count: 4, doughId: "soft-bun" },
+        ],
+      }),
+      REF_PRESETS,
+      DOUGHS,
+    );
+    expect(r.mixes).toEqual([]);
+    expect(r.doughs).toEqual([]);
+    expect(r.allocation.map((l) => l.key)).toEqual(["loaf", "roll@soft-bun"]);
+    for (const k of INGREDIENTS) expect(r[k]).toBe(0);
+    expect(codes(r)).toContain("short");
+
+    const bunsOnly = computePlan(
+      refPlan({ starterWeight: 0, items: [{ presetId: "roll", count: 4, doughId: "soft-bun" }] }),
+      REF_PRESETS,
+      DOUGHS,
+    );
+    expect(bunsOnly.mixes).toEqual([]);
+    expect(bunsOnly.doughs).toEqual([]);
+  });
+});
+
 describe("a dough with an add-in missing its name", () => {
   it("names the add-in by its kind rather than failing", () => {
     // Storage refuses such a dough; this is the planner's own guard for a bad value in memory.
@@ -1483,6 +1571,27 @@ describe("§4 warnings, dough by dough", () => {
     expect(codes(own)).not.toContain("salt-range");
     const split = loafOn(plain({ id: "plain-split", method: "split" }), { settings: salty });
     expect(warning(split, "salt-range")?.message).toBe("Salt 3% is outside the usual 1.8–2.5%.");
+  });
+
+  it("says a weight below the minimum is dough when the add-ins ride on top", () => {
+    const below = (weightsIncludeAdditions: boolean, doughId?: string) =>
+      warning(
+        computePlan(
+          refPlan({
+            weightsIncludeAdditions,
+            items: [{ presetId: "loaf", count: 1, weightOverride: 300, doughId }],
+          }),
+          REF_PRESETS,
+          DOUGHS,
+        ),
+        "below-min",
+      )?.message;
+    expect(below(false, "jalapeno-cheddar")).toBe(
+      "Loaf (Jalapeño cheddar) at 300 g of dough is below its 400 g minimum. Drop a piece, unpin it, or lower the minimum in presets.",
+    );
+    expect(below(true, "jalapeno-cheddar")).toMatch(/^Loaf \(Jalapeño cheddar\) at 300 g is below/);
+    // No add-ins, nothing to tell apart.
+    expect(below(false)).toMatch(/^Loaf at 300 g is below/);
   });
 
   it("names the line below its minimum by preset and dough", () => {

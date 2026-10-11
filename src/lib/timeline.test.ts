@@ -542,6 +542,86 @@ describe("§5 multi-dough timeline", () => {
     expect(stepOf(wet, "bake:roll@wet")?.note).toBe("220 °C, 18–22 min, steam");
   });
 
+  it("keeps water back for the salt only where a plain mix has that much water", () => {
+    // Example B: the main mix has 433 g of water and says so; the enriched bun mix never does.
+    const b = refTimeline({ mode: "items", items: exampleB() });
+    expect(stepOf(b, "mix")?.note).toBe("Add starter and salt. Reserve ~20 g water for the salt.");
+    expect(stepOf(b, "mix@soft-bun")?.note).not.toMatch(/Reserve/);
+    // Example C: the liquids leave its one mix no water at all, and no note mentions it.
+    const wet = editDough("soft-bun", {
+      hydration: 0.62,
+      enrichments: [
+        { kind: "milk", pct: 0.55 },
+        { kind: "egg", pct: 0.12 },
+        { kind: "butter", pct: 0.12 },
+      ],
+    });
+    const c = refTimeline(
+      {
+        mode: "items",
+        items: [{ presetId: "loaf", count: 1, weightOverride: 916.8, doughId: "soft-bun" }],
+      },
+      wet,
+    );
+    const notes = [...c.steps, ...c.tracks.flatMap((tr) => tr.steps)].map((st) => st.note ?? "");
+    expect(notes.some((n) => /Reserve/.test(n))).toBe(false);
+    // A plain separate mix with 14 g of water, and a main mix with 14 g, keep none back.
+    const ownSalt: Dough = {
+      id: "own-salt",
+      name: "Own salt",
+      method: "separate",
+      salt: 0.022,
+      enrichments: [],
+      inclusions: [],
+    };
+    const small = (standMixer: boolean) =>
+      refTimeline(
+        {
+          mode: "items",
+          standMixer,
+          items: [
+            { presetId: "loaf", count: 1 },
+            { presetId: "roll", count: 1, weightOverride: 40, doughId: "own-salt" },
+          ],
+        },
+        [...DOUGHS, ownSalt],
+      );
+    expect(stepOf(small(false), "mix@own-salt")?.note).toBe("Add starter and salt.");
+    expect(stepOf(small(false), "mix")?.note).toBe(
+      "Add starter and salt. Reserve ~20 g water for the salt.",
+    );
+    expect(stepOf(small(true), "mix@own-salt")?.note).toBe(
+      "Dough hook, low speed 2–3 min to combine, then speed 2 for 4–6 min until smooth and elastic. Watch the dough temperature; the mixer warms it.",
+    );
+    const tiny = refTimeline({
+      mode: "items",
+      items: [{ presetId: "roll", count: 1, weightOverride: 40 }],
+    });
+    expect(stepOf(tiny, "mix")?.note).toBe("Add starter and salt.");
+  });
+
+  it("gives a line keyed #2 a lane of its own", () => {
+    const softLoaf = REF_PRESETS.map((p) => (p.id === "loaf" ? { ...p, doughId: "soft-bun" } : p));
+    const p = plan({
+      settings: REF,
+      mode: "items",
+      items: [
+        { presetId: "loaf", count: 1 },
+        { presetId: "loaf", count: 2, weightOverride: 700, doughId: "soft-bun" },
+      ],
+    });
+    const t = build(p, DOUGHS, softLoaf);
+    expect(t.lanes.map((l) => [l.key, l.label])).toEqual([
+      ["loaf@soft-bun", "Loaf (Soft bun dough)"],
+      ["loaf@soft-bun#2", "Loaf (Soft bun dough)"],
+    ]);
+    expect(laneOf(t, "loaf@soft-bun#2")?.steps.map((st) => st.id)).toEqual([
+      "shape:loaf@soft-bun#2",
+      "proof:loaf@soft-bun#2",
+      "bake:loaf@soft-bun#2",
+    ]);
+  });
+
   it("opens worked timeline B3 with the tangzhong, with and without a feed (§5)", () => {
     const b3 = refTimeline({ mode: "items", items: EXAMPLE_B3 }, TZ_DOUGHS);
     // Nothing is on lean or a split: no main mix and no base track.

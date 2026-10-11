@@ -146,31 +146,42 @@ function resolveLines(items: ItemSelection[], presets: Preset[], ctx: LineContex
   const flat = { ...ctx.settings, benchLoss: 0 };
   const kLean = usablePerFlour(lean, flat, ctx);
   const lines: Line[] = [];
+  const byKey = new Map<string, Line[]>();
   for (const sel of items) {
     const p = presets.find((x) => x.id === sel.presetId);
     if (!p || !(sel.count > 0)) continue;
     const asked = resolveDoughId(sel, p);
+    const pinned = sel.weightOverride !== undefined && sel.weightOverride > 0;
+    const baseWeight = pinned ? (sel.weightOverride as number) : p.defaultWeight;
+    const count = Math.floor(sel.count);
+    // Two rows can reach one key: a row on the preset's own dough beside a row naming that dough.
+    // At one weight they are one line with the counts summed; at different weights both stay, the
+    // later keyed #2, #3, so no row is lost and every key stays unique.
+    const key = lineKey(p.id, asked);
+    const same = byKey.get(key) ?? [];
+    const twin = same.find((l) => l.pinned === pinned && (!pinned || l.baseWeight === baseWeight));
+    if (twin) {
+      twin.count += count;
+      continue;
+    }
     // Decision 2: a dough missing from the library keeps its own key and computes as lean.
     const found = findDough(asked, ctx.doughs);
     const d = found ?? lean;
     const isLean = d.id === LEAN_DOUGH_ID;
     const perFlour = isLean ? kLean : usablePerFlour(d, flat, ctx);
-    const pinned = sel.weightOverride !== undefined && sel.weightOverride > 0;
-    const baseWeight = pinned ? (sel.weightOverride as number) : p.defaultWeight;
-    lines.push({
-      key: lineKey(p.id, asked),
+    const line: Line = {
+      key: same.length === 0 ? key : `${key}#${same.length + 1}`,
       presetId: p.id,
       name: p.name,
       icon: p.icon,
       doughId: d.id,
       doughName: found ? d.name : `${lean.name} (dough ${asked} not found)`,
-      count: Math.floor(sel.count),
+      count,
       baseWeight,
       weightEach: baseWeight,
       doughEach: baseWeight,
       additionsEach: 0,
       pieceEach: baseWeight,
-      subtotal: baseWeight * Math.floor(sel.count),
       adjusted: false,
       belowMin: baseWeight < p.minWeight,
       pinned,
@@ -182,7 +193,9 @@ function resolveLines(items: ItemSelection[], presets: Preset[], ctx: LineContex
       k: compositionFactor(d, ctx.settings),
       kDough: doughOnlyFactor(d, ctx.settings),
       weightsIncludeAdditions: ctx.weightsIncludeAdditions !== false,
-    });
+    };
+    byKey.set(key, [...same, line]);
+    lines.push(line);
   }
   return lines;
 }
@@ -272,7 +285,6 @@ function settle(lines: Line[]): AllocationLine[] {
       l.additionsEach = 0;
       l.pieceEach = w;
     }
-    l.subtotal = w * l.count;
     l.adjusted = Math.abs(w - l.baseWeight) >= 0.5;
     l.belowMin = w < l.minWeight - EPS;
   }
@@ -328,7 +340,6 @@ function stripLine(l: Line): AllocationLine {
     doughEach: l.doughEach,
     additionsEach: l.additionsEach,
     pieceEach: l.pieceEach,
-    subtotal: l.subtotal,
     adjusted: l.adjusted,
     belowMin: l.belowMin,
     pinned: l.pinned,
@@ -460,8 +471,9 @@ export function computePlan(plan: Plan, presets: Preset[], doughs: Dough[] = [])
       base = batchFromItems(lines, s);
     }
   }
-  // The base mix is absent when its total flour is 0, and the doughs on it with it: from the items
-  // when every line is on a separate dough, from the starter when the separate doughs take it all.
+  // §4: a mix is absent when its total flour is 0, and the doughs in it with it. The base mix: from
+  // the items when every line is on a separate dough, from the starter when the separate doughs
+  // take it all. Any mix: when there is no starter to make it.
   if (base && !(base.totalFlour > EPS)) base = undefined;
   const { mixes, results } = perMix(shares, base, s);
 
@@ -482,8 +494,8 @@ export function computePlan(plan: Plan, presets: Preset[], doughs: Dough[] = [])
 
 /**
  * §4 Mixes: the base mix (lean and every split, pooled) first, then one mix per separate dough in
- * library order; and one DoughResult per dough in use, in share order. Without a base mix there is
- * no lean dough and no split.
+ * library order; and one DoughResult per dough in use, in share order. A mix with no flour is
+ * absent, and its doughs with it: without a base mix there is no lean dough and no split.
  */
 function perMix(
   shares: Share[],
@@ -496,6 +508,7 @@ function perMix(
   for (const share of shares) {
     if (share.method === "base" || (share.method === "split" && !base)) continue;
     const built = perDough(share, s);
+    if (built.mix && !(built.mix.totalFlour > EPS)) continue;
     results.push(built.result);
     if (built.mix) mixes.push(built.mix);
     else splits.push(built.result);

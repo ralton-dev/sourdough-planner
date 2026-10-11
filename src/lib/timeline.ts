@@ -175,9 +175,16 @@ const INTO_BULK_MIN: Record<SplitAt, number> = {
   fold2: 2 * FOLD_INTERVAL_MIN,
 };
 
-const HAND_MIX_NOTE = "Add starter and salt. Reserve ~20 g water for the salt.";
-const MIXER_MIX_NOTE =
-  "Dough hook, low speed 2–3 min to combine, then speed 2 for 4–6 min until smooth and elastic. Reserve ~20 g water for the salt. Watch the dough temperature; the mixer warms it.";
+/** Holding water back for the salt needs a water line with that much in it (as the ingredients card). */
+const RESERVE_WATER_G = 20;
+
+/** A plain mix, by hand or by mixer; it keeps water back for the salt only when it has the water. */
+function plainMixNote(mixer: boolean, addedWater: number): string {
+  const reserve = addedWater >= RESERVE_WATER_G ? " Reserve ~20 g water for the salt." : "";
+  return mixer
+    ? `Dough hook, low speed 2–3 min to combine, then speed 2 for 4–6 min until smooth and elastic.${reserve} Watch the dough temperature; the mixer warms it.`
+    : `Add starter and salt.${reserve}`;
+}
 const BULK_NOTE = "Target a 50–75 % rise, domed and jiggly. The clock is a guide.";
 const DIVIDE_NOTE = "Weigh each piece from the division card.";
 
@@ -253,8 +260,8 @@ export function buildTimeline(
       prefix.push("autolyse", "Autolyse", 45, "Flour plus most of the water. Rest.");
     }
     const mixMinutes = baseMix?.mixMinutes ?? 10;
-    if (plan.standMixer) prefix.push("mix", "Mix (stand mixer)", mixMinutes, MIXER_MIX_NOTE);
-    else prefix.push("mix", "Mix", mixMinutes, HAND_MIX_NOTE);
+    const note = plainMixNote(plan.standMixer === true, baseMix?.addedWater ?? 0);
+    prefix.push("mix", plan.standMixer ? "Mix (stand mixer)" : "Mix", mixMinutes, note);
 
     // The base dough keeps today's ids and defaults (§10).
     const lean = result.doughs.find((d) => d.method === "base");
@@ -523,7 +530,7 @@ function separateMixNote(
     } else if (sweet) {
       out.push(`${capFirst(sweet.label.toLowerCase())} in with the water.`);
     }
-    out.push(mixer ? MIXER_MIX_NOTE : HAND_MIX_NOTE);
+    out.push(plainMixNote(mixer, water));
   }
   const early = phrases(lines.filter((a) => a.addAt === "mix" && isAddIn(a)));
   if (early.length > 0) out.push(`At the end, work in ${early.join(", ")}.`);
