@@ -368,7 +368,8 @@ export function TimelineCard({
         <summary>Bulk fermentation guide table</summary>
         <p className="muted small" style={{ margin: "6px 0 10px" }}>
           A guide at 20–25 % inoculation, interpolated between rows. Edit it as you learn your
-          kitchen. The target is always the dough: 50–75 % rise, domed and jiggly.
+          kitchen. The target is always the dough: for the main dough, 50–75 % rise, domed and
+          jiggly.
         </p>
         <table className="table">
           <thead>

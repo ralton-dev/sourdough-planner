@@ -107,7 +107,8 @@ input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
 }
-input[type="checkbox"] {
+input[type="checkbox"],
+input[type="radio"] {
   width: 24px;
   height: 24px;
   min-height: 0;
@@ -206,6 +207,9 @@ textarea {
 }
 .num {
   font-variant-numeric: tabular-nums;
+}
+.nowrap {
+  white-space: nowrap;
 }
 .stack {
   display: grid;
@@ -347,6 +351,14 @@ textarea {
   color: var(--muted);
   padding-top: 6px;
 }
+/* One mixing bowl in the ingredients card (WP-F): its heading, tangzhong, table and notes. */
+.mix-block + .mix-block {
+  margin-top: 18px;
+}
+/* A split dough's block under the main dough it comes out of (WP-F). */
+.split-block {
+  margin-top: 14px;
+}
 .ok {
   color: var(--ok);
 }
@@ -366,6 +378,7 @@ textarea {
   padding: 12px;
   border: 1px solid var(--line);
   position: relative;
+  container-type: inline-size;
 }
 .piece .name {
   font-weight: 600;
@@ -373,12 +386,16 @@ textarea {
   gap: 6px;
   align-items: center;
 }
+/* The count on one line, "g" included; in a narrow piece (two columns under ~1000 px) it shrinks
+   to fit rather than spill out. Kitchen mode and print set their own sizes. */
 .piece .big {
   font-size: 2.2rem;
+  font-size: min(2.2rem, 20.5cqi);
   font-weight: 800;
   line-height: 1.05;
   font-variant-numeric: tabular-nums;
   margin: 4px 0 2px;
+  white-space: nowrap;
 }
 .piece .big small {
   font-size: 1rem;
@@ -390,6 +407,13 @@ textarea {
 }
 .piece.bad {
   border-color: var(--danger);
+}
+/* One dough's pieces under its heading (WP-F); the print rule keeps the heading with them. */
+.piece-group + .piece-group {
+  margin-top: 14px;
+}
+.piece-group > h3 {
+  margin-bottom: 6px;
 }
 .badge {
   display: inline-block;
@@ -437,6 +461,9 @@ textarea {
 .item-row:last-of-type {
   border-bottom: 0;
 }
+.item-row > div:first-child {
+  min-width: 0;
+}
 .item-row .title {
   font-weight: 600;
 }
@@ -480,6 +507,7 @@ textarea {
   max-width: 100%;
   min-height: 44px;
   padding: 6px 10px;
+  margin-top: 6px;
 }
 
 /* timeline */
@@ -614,8 +642,17 @@ textarea {
 .track .folds span {
   background: var(--card);
 }
+/* Notes as written, line breaks kept: the plan's in kitchen mode, a dough's under its mix (WP-F). */
 .plan-notes {
   white-space: pre-wrap;
+  margin-top: 6px;
+}
+/* The Notes card's box: three lines when empty, growing with what is written (WP-F keeps its
+   script for browsers without field-sizing). */
+.notes-input {
+  field-sizing: content;
+  min-height: 5.5em;
+  min-height: calc(3lh + 22px);
 }
 
 /* tables */
@@ -669,6 +706,29 @@ details[open] > summary::before {
 .preset-card .actions {
   display: flex;
   gap: 4px;
+}
+/* The doughs editor (WP-E). A titled part of the dough form, ruled off from the part above it. */
+.dough-section {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+/* One enrichment, sweetness or add-in: a box of its own inside the form. */
+.dough-row {
+  gap: 6px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+}
+/* A fieldset that only groups (and disables) its fields: no frame of its own. */
+.fieldset-reset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.fieldset-reset[disabled] {
+  opacity: 0.55;
 }
 
 /* kitchen mode */
@@ -812,9 +872,14 @@ details[open] > summary::before {
     break-inside: auto;
     page-break-inside: auto;
   }
+  /* A mix keeps its splits with it when it fits; when it does not, each of its parts stays whole. */
   .step,
   .lane,
   .track,
+  .mix-block,
+  .mix-block > *,
+  .split-block,
+  .piece-group,
   .piece,
   .callout,
   .window,
@@ -831,24 +896,43 @@ details[open] > summary::before {
     break-after: avoid;
     page-break-after: avoid;
   }
+  /* Block flow, not flex: Firefox breaks a page between rows of inline blocks but not inside a
+     flex container. Four to a row, a lone piece a quarter wide, every piece whole. */
   .pieces {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    display: block;
   }
   .piece {
-    flex: 1 1 150px;
+    display: inline-block;
+    vertical-align: top;
+    width: calc(25% - 6.1px);
+    margin: 0 8px 8px 0;
+  }
+  .piece:nth-child(4n) {
+    margin-right: 0;
   }
   .piece .big {
     font-size: 1.7rem;
     white-space: nowrap;
   }
+  /* Fields print as their values; a textarea (the Notes card) prints as plain text. */
   input,
-  select {
+  select,
+  textarea {
     border: 0;
     background: transparent;
     padding: 0;
     min-height: 0;
+  }
+  textarea {
+    resize: none;
+  }
+  textarea::placeholder {
+    color: transparent;
+  }
+  /* Opacity can print faint or flattened; a disabled group prints in plain grey instead. */
+  .fieldset-reset[disabled] {
+    opacity: 1;
+    color: #555;
   }
   .piece.adjusted {
     border-width: 2px;
