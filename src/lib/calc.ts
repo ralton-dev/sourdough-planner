@@ -1,15 +1,19 @@
 import type {
   AllocationLine,
   BatchResult,
+  Dough,
   Ingredients,
   ItemSelection,
   Plan,
   Preset,
   Settings,
 } from "./types";
+import { leanDough } from "./doughs";
 import { collectWarnings } from "./warnings";
 
 const EPS = 1e-9;
+/** Every line is on the base dough until WP-C reads the dough library. */
+const LEAN = leanDough();
 
 /** §5.1 — size the batch from the starter on hand. Unrounded. */
 export function batchFromStarter(S: number, s: Settings): Ingredients {
@@ -81,12 +85,18 @@ function resolveLines(items: ItemSelection[], presets: Preset[]): Line[] {
     const pinned = sel.weightOverride !== undefined && sel.weightOverride > 0;
     const baseWeight = pinned ? (sel.weightOverride as number) : p.defaultWeight;
     lines.push({
+      key: p.id,
       presetId: p.id,
       name: p.name,
       icon: p.icon,
+      doughId: LEAN.id,
+      doughName: LEAN.name,
       count: Math.floor(sel.count),
       baseWeight,
       weightEach: baseWeight,
+      doughEach: baseWeight,
+      additionsEach: 0,
+      pieceEach: baseWeight,
       subtotal: baseWeight * Math.floor(sel.count),
       adjusted: false,
       belowMin: baseWeight < p.minWeight,
@@ -146,6 +156,9 @@ export function allocate(
   }
 
   for (const l of lines) {
+    // Lean has no add-ins: the planned weight is the dough and the finished piece.
+    l.doughEach = l.weightEach;
+    l.pieceEach = l.weightEach;
     l.subtotal = l.weightEach * l.count;
     l.adjusted = Math.abs(l.weightEach - l.baseWeight) >= 0.5;
     l.belowMin = l.weightEach < l.minWeight - EPS;
@@ -192,12 +205,18 @@ function suggest(delta: number, lines: Line[]): string[] {
 
 function stripLine(l: Line): AllocationLine {
   return {
+    key: l.key,
     presetId: l.presetId,
     name: l.name,
     icon: l.icon,
+    doughId: l.doughId,
+    doughName: l.doughName,
     count: l.count,
     baseWeight: l.baseWeight,
     weightEach: l.weightEach,
+    doughEach: l.doughEach,
+    additionsEach: l.additionsEach,
+    pieceEach: l.pieceEach,
     subtotal: l.subtotal,
     adjusted: l.adjusted,
     belowMin: l.belowMin,
@@ -205,8 +224,16 @@ function stripLine(l: Line): AllocationLine {
   };
 }
 
-/** The whole plan, in one pure call. */
-export function computePlan(plan: Plan, presets: Preset[]): BatchResult {
+/**
+ * The whole plan, in one pure call. `doughs` is the dough library; it is accepted and not yet
+ * read, so every line computes on the base dough and `mixes`/`doughs` are empty (WP-C fills them).
+ */
+export function computePlan(
+  plan: Plan,
+  presets: Preset[],
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- read from WP-C on (decision 21)
+  _doughs: Dough[] = [],
+): BatchResult {
   const s = plan.settings;
   let ingredients: Ingredients;
   let alloc: AllocationResult;
@@ -229,7 +256,7 @@ export function computePlan(plan: Plan, presets: Preset[]): BatchResult {
     }
   }
 
-  const partial = { ...ingredients, ...alloc, inoculationForAvailable };
+  const partial = { ...ingredients, ...alloc, mixes: [], doughs: [], inoculationForAvailable };
   const warnings = collectWarnings(plan, presets, partial);
   return { ...partial, warnings };
 }

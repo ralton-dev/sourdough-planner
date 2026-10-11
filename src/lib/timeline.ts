@@ -1,4 +1,5 @@
-import type { Plan, Preset, ProofType } from "./types";
+import type { Dough, EffectiveMethod, Plan, Preset, ProofType } from "./types";
+import { leanDough } from "./doughs";
 
 export interface BulkRow {
   tempC: number;
@@ -70,9 +71,13 @@ export interface TimelineStep {
 }
 
 export interface Lane {
+  /** `presetId` for lean, `presetId@doughId` otherwise (decision 2); lane step ids use it. */
+  key: string;
   presetId: string;
   name: string;
   icon?: string;
+  doughId: string;
+  doughName: string;
   proof: ProofType;
   steps: TimelineStep[];
   /** Earliest and latest sensible bake start given the preset's proof range. */
@@ -81,17 +86,36 @@ export interface Lane {
   steam: boolean;
 }
 
-export interface Timeline {
+/** One dough's run from its mix or split to the end of its bench rest (§5). */
+export interface DoughTrack {
+  doughId: string;
+  name: string;
+  icon?: string;
+  method: EffectiveMethod;
   steps: TimelineStep[];
-  /** Stretch-and-fold moments during bulk. */
   folds: Date[];
+  bulk: BulkEstimate & { usedMinutes: number; doughFactor: number };
+  benchEnd: Date;
+}
+
+export interface Timeline {
+  /** The common prefix: tangzhong@<id>…, feed?, autolyse?, mix. Until WP-D: the whole base run. */
+  steps: TimelineStep[];
+  /** Base first, then separate and split doughs in library order. Empty until WP-D. */
+  tracks: DoughTrack[];
   /** Sets asked for (default or override) and the default for the mixing method. */
   foldCount: number;
   defaultFoldCount: number;
   lanes: Lane[];
   ovenWarnings: string[];
-  bulk: BulkEstimate & { usedMinutes: number };
   end: Date;
+  /**
+   * Stretch-and-fold moments during the base bulk.
+   * @deprecated alias of tracks[0].folds; WP-G deletes it with the UI that reads it.
+   */
+  folds: Date[];
+  /** @deprecated alias of tracks[0].bulk; WP-G deletes it with the UI that reads it. */
+  bulk: BulkEstimate & { usedMinutes: number };
 }
 
 /**
@@ -117,9 +141,20 @@ export function foldCountFor(plan: Pick<Plan, "standMixer" | "foldCount">): numb
 }
 
 const addMin = (d: Date, m: number) => new Date(d.getTime() + m * 60_000);
+/** Every lane is on the base dough until WP-D reads the dough library. */
+const LEAN = leanDough();
 
-/** §7 — the whole schedule from the start time. Pure; overrides cascade naturally. */
-export function buildTimeline(plan: Plan, presets: Preset[], table: BulkRow[]): Timeline {
+/**
+ * §7 — the whole schedule from the start time. Pure; overrides cascade naturally. `doughs` is
+ * the dough library; it is accepted and not yet read, so `tracks` is empty (WP-D fills it).
+ */
+export function buildTimeline(
+  plan: Plan,
+  presets: Preset[],
+  table: BulkRow[],
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- read from WP-D on (decision 21)
+  _doughs: Dough[] = [],
+): Timeline {
   const ov = plan.timelineOverrides ?? {};
   const dur = (id: string, def: number) => {
     const v = ov[id];
@@ -212,9 +247,12 @@ export function buildTimeline(plan: Plan, presets: Preset[], table: BulkRow[]): 
       `${p.bake.tempC} °C, ${p.bake.minutes[0]}–${p.bake.minutes[1]} min${p.bake.steam ? ", steam" : ""}`,
     );
     lanes.push({
+      key: p.id,
       presetId: p.id,
       name: p.name,
       icon: p.icon,
+      doughId: LEAN.id,
+      doughName: LEAN.name,
       proof: p.proof,
       steps: laneSteps,
       bakeWindow: {
@@ -233,13 +271,14 @@ export function buildTimeline(plan: Plan, presets: Preset[], table: BulkRow[]): 
 
   return {
     steps,
-    folds,
+    tracks: [],
     foldCount,
     defaultFoldCount: defaultFoldCount(plan),
     lanes,
     ovenWarnings: ovenConflicts(lanes),
-    bulk: { ...est, usedMinutes: bulk.minutes },
     end,
+    folds,
+    bulk: { ...est, usedMinutes: bulk.minutes },
   };
 
   function c(l: Lane): Date {
