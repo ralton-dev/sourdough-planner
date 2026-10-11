@@ -19,23 +19,40 @@ builds and publishes the Docker image.
 ## Print check
 
 Browsers fragment grid and flex containers unreliably, so the print layout is block flow and each
-`.step`, `.lane`, `.track`, `.piece` and callout is atomic (commit `1980585`). Verify, do not eyeball:
+`.step`, `.lane`, `.track`, `.piece`, `.subsection`, `.mix`, callout and card that fits a page is
+atomic (commit `1980585`; an Ingredients section with splits may break, but only before a split).
+Verify, do not eyeball:
 
-1. `npm run build`, serve `dist/` on a non-default port (`node server/index.mjs` or `npx vite preview --port 4173`).
-2. `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --print-to-pdf=<out.pdf> --no-pdf-header-footer --virtual-time-budget=3000 <url>`
-   Chrome does not exit by itself: kill it once the PDF exists. macOS has no `timeout`.
-3. Per-page text with pypdf in a scratchpad venv; rasterise with `sips -s format png` and look.
-4. Ben's browser is Firefox: never rely on grid or flex fragmentation in print CSS.
+```
+npm run screens:print -- --both --png --out <dir>
+```
 
-Screenshots for a look: `--headless=new --screenshot=<png> --window-size=1200,2400 <url>`.
+It prints every state in `scripts/screens/states.mjs` in Chrome (DevTools protocol) and in Firefox
+(WebDriver BiDi, Firefox's own print path: Quartz on macOS), checks that every block that must be
+whole sits on one page (exit 1 if not), says how far down page 1 the text reaches, and writes each
+page as a PNG to look at, which is still the point. `--state busy`, `--scheme dark` (the print
+palette must hold) and `--timeline dough` narrow it; `scripts/screens/README.md` has every flag.
+Ben's browser is Firefox: never rely on grid or flex fragmentation in print CSS, and Firefox
+ignores `break-after: avoid`, so a heading stays with what follows only inside an atomic block.
 
-## Seeing state the app does not have yet
+## Seeing state
 
-The app's state lives in `localStorage` (`sourdough.v1.*`), which headless Chrome cannot be given
-from the command line. To look at a view that needs a plan, doughs or a wiring that is not in
-`App.tsx` yet, use a scratch `git worktree` (symlink the repo's `node_modules` into it), make the
-temporary wiring or seeded state there, run `vite` on a unique port, and never commit from it.
-Remove it with `git worktree remove --force` when done.
+The app's state lives in `localStorage` (`sourdough.v1.*`), which the screens harness seeds:
+
+```
+npm run screens -- --state busy --width 390 --scheme light --out <dir>
+```
+
+shoots the plan page and each of its cards for the states in `scripts/screens/states.mjs` (the
+style review's six and `stress`; a new state is an entry there). `--view kitchen`, `--view presets
+--open "Soft bun dough"`, `--timeline dough`, `--firefox` and `--text` (the cards' text, no
+pictures) cover the rest. Each run builds the working tree into a scratch folder and serves it on a
+free port, so Ben's dev server on :5173 is never touched; `--dist <dir>` serves another build
+instead, which is how to compare before and after: build `HEAD` in a scratch worktree (`git
+worktree add --detach`, symlink `node_modules`, `npx vite build --outDir <dir>`), then shoot both
+and compare the PNGs. Only a view that needs wiring `App.tsx` does not have yet still needs the
+temporary wiring in such a worktree; never commit from it, and remove it with
+`git worktree remove --force` when done.
 
 ## Git conventions
 

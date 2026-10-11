@@ -16,7 +16,9 @@
     "format:fix": "prettier --write .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "screens": "node scripts/screens/shoot.mjs",
+    "screens:print": "node scripts/screens/print.mjs"
   },
   "dependencies": {
     "react": "^19.2.0",
