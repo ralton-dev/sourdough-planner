@@ -1,1 +1,181 @@
 /* The Timeline card (TimelineCard.tsx): R4 of PLAN-redesign.md; its print block is R7's. */
+
+/* What were inline styles (decision 28), on the tokens. */
+.timeline-card .options {
+  margin-bottom: var(--sp-2);
+}
+.timeline-card .btn.reset {
+  padding: 0 var(--sp-1);
+  min-height: 0;
+}
+.timeline-card .step .guide {
+  grid-column: 2 / -1;
+}
+.timeline-card .oven {
+  margin-top: var(--sp-3);
+}
+.timeline-card .bulk-table {
+  margin-top: var(--sp-3);
+}
+.timeline-card .bulk-table > p {
+  margin: var(--sp-1) 0 var(--sp-3);
+}
+.timeline-card .add-row {
+  margin-top: var(--sp-2);
+}
+
+/* "In order | By dough" at the end of the header row, after the times. */
+.timeline-card > header > .toggle {
+  margin-left: auto;
+}
+
+/*
+ * In order (§4). A row is the shared .step (its padding, rule, time and label) laid out as: a
+ * gutter of rails, the time, the step with its notes under it, the length, the dough tags. The
+ * gutter has a slot per dough, in track order, so a dough's rail stays in one place; it reaches
+ * through the row's padding and rule so a running bulk reads as one line down the list.
+ */
+.timeline-card .order-row {
+  --row-pad: 10px;
+  padding-block: var(--row-pad);
+  grid-template-columns: auto 62px minmax(0, 1fr) auto 11rem;
+  grid-template-areas:
+    "rails t label dur tags"
+    "rails t notes dur tags";
+  row-gap: 0;
+  position: relative;
+}
+.timeline-card .order.bracketed .order-row {
+  padding-right: var(--sp-3);
+}
+.timeline-card .order-row > .rails {
+  grid-area: rails;
+  align-self: stretch;
+  display: flex;
+  gap: 2px;
+  margin-block: calc(-1 * var(--row-pad)) calc(-1 * var(--row-pad) - 1px);
+}
+.timeline-card .order-row > .rails > .dough-rail {
+  min-height: 0;
+}
+.timeline-card .order-row > .rails > .off {
+  border-left-color: transparent;
+}
+.timeline-card .order-row > .t {
+  grid-area: t;
+}
+/* On a wide card the label and the tags take their own columns. */
+.timeline-card .order-row > .main,
+.timeline-card .order-row .head {
+  display: contents;
+}
+.timeline-card .order-row .label {
+  grid-area: label;
+}
+.timeline-card .order-row .tags {
+  grid-area: tags;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+/* A long dough name wraps inside its column rather than run out of the card. */
+.timeline-card .order-row .dough-tag {
+  white-space: normal;
+}
+.timeline-card .order-row .dur {
+  grid-area: dur;
+}
+.timeline-card .order-row .notes {
+  grid-area: notes;
+  margin-top: 2px;
+}
+.timeline-card .order-row .notes > * + * {
+  margin-top: 2px;
+}
+.timeline-card .order-row.fold .label {
+  font-weight: 500;
+}
+/* A stretch of rows whose hands-on steps clash: a bracket down the right edge. */
+.timeline-card .order-row.bracket::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: -1px;
+  right: 0;
+  width: var(--sp-1);
+  border-right: 2px solid var(--warn-ink);
+}
+.timeline-card .order-row.bracket.from::after {
+  top: var(--row-pad);
+  border-top: 2px solid var(--warn-ink);
+}
+.timeline-card .order-row.bracket.to::after {
+  bottom: var(--row-pad);
+  border-bottom: 2px solid var(--warn-ink);
+}
+
+/* The names line is a phone's (below); a wide card names the doughs in the tags column. */
+.timeline-card .order-row .names {
+  display: none;
+}
+
+/*
+ * A phone: one column beside the time. The length box sits right of the label and the notes run
+ * on under it at the column's width. Each row leads with its doughs' dots and icons; their names
+ * get a line of their own, in their colours, only when the doughs change from the row above (§4).
+ */
+@media screen and (max-width: 720px) {
+  .timeline-card .order-row {
+    grid-template-columns: auto 56px minmax(0, 1fr);
+    grid-template-areas: "rails t main";
+    column-gap: var(--sp-2);
+  }
+  .timeline-card .order-row > .main {
+    grid-area: main;
+    display: block;
+    min-width: 0;
+  }
+  .timeline-card .order-row .dur {
+    float: right;
+    margin-left: var(--sp-2);
+  }
+  /* The dots stay on the label's first line; a long label wraps beside them. */
+  .timeline-card .order-row .head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-2);
+  }
+  .timeline-card .order-row .label {
+    flex: 1;
+    min-width: 0;
+  }
+  .timeline-card .order-row .tags {
+    order: -1;
+    flex: none;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--sp-1);
+  }
+  .timeline-card .order-row .tags .name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .timeline-card .order-row .names {
+    display: block;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+  }
+  .timeline-card .order-row .names > span {
+    color: var(--dough);
+  }
+  .timeline-card .order-row .names > span + span::before {
+    content: ", ";
+    color: var(--muted);
+  }
+}

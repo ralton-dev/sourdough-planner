@@ -1,6 +1,6 @@
+import { useState } from "react";
 import type { Plan, Preset } from "../lib/types";
 import {
-  FOLD_INTERVAL_MIN,
   MAX_FOLD_COUNT,
   type BulkRow,
   type DoughTrack,
@@ -8,8 +8,23 @@ import {
   type TimelineStep,
 } from "../lib/timeline";
 import { fmtDayTime, fmtDuration, fmtRange, fmtTime } from "../lib/format";
+import { load } from "../lib/storage";
+import { usePersisted } from "../hooks";
 import { FeedHelper } from "./FeedHelper";
+import {
+  doughColours,
+  foldNumbers,
+  isBulkStep,
+  placeTracks,
+  timelineRows,
+  trackBadge,
+  trackTitle,
+  type TimelineRow,
+} from "./timelineRows";
 import "./timeline.css";
+
+// Kitchen mode reads these from here; they live with the In order model now (R5 may drop them).
+export { isBulkStep, placeTracks, trackBadge, trackTitle } from "./timelineRows";
 
 interface Props {
   plan: Plan;
@@ -22,39 +37,30 @@ interface Props {
   starterTotal: number;
 }
 
-/** "Main dough" for the base track, as its mix is labelled; any other dough by its own name. */
-export function trackTitle(track: DoughTrack): string {
-  return track.method === "base" ? "Main dough" : track.name;
-}
-
-/** The method badge on a track's heading, in the items card's words; the main dough has none. */
-export function trackBadge(track: DoughTrack): string | undefined {
-  if (track.method === "split") return "split";
-  if (track.method === "separate") return "separate mix";
-  return undefined;
-}
-
 /**
- * Where the tracks go under the common steps. The base track on its own (every all-lean plan)
- * carries straight on in the same list with no heading, exactly as the card read before there were
- * tracks; any other set of tracks gets a block each, the main dough's included.
+ * Decision 33: the view this browser last chose, "order" or "dough". Its own key, so it stays out
+ * of the export bundle and `UiPrefs`; `KEYS` would hold it, but the lib is frozen (decision 31).
  */
-export function placeTracks(timeline: Timeline): { inline?: DoughTrack; blocks: DoughTrack[] } {
-  const [only, ...more] = timeline.tracks;
-  return only?.method === "base" && more.length === 0
-    ? { inline: only, blocks: [] }
-    : { blocks: timeline.tracks };
-}
+const VIEW_KEY = "sourdough.v1.timelineView";
+type View = "order" | "dough";
+const isView = (v: unknown): v is View => v === "order" || v === "dough";
 
-/** A track's bulk step: `bulk` on the base track, `bulk@<dough id>` on every other. */
-export const isBulkStep = (step: TimelineStep): boolean =>
-  step.id === "bulk" || step.id.startsWith("bulk@");
+/** By dough: the main dough, then the doughs split off it, then the separate mixes (§4). */
+const RANK: Record<DoughTrack["method"], number> = { base: 0, split: 1, separate: 2 };
+
+/** What a length box edits: a step, or an In order row (a merged row edits each of its steps). */
+interface Length {
+  id: string;
+  label: string;
+  minutes: number;
+  defaultMinutes?: number;
+}
 
 function DurationInput({
   step,
   onChange,
 }: {
-  step: TimelineStep;
+  step: Length;
   onChange: (minutes: number | undefined) => void;
 }) {
   return (
@@ -74,10 +80,13 @@ function DurationInput({
       {step.minutes !== step.defaultMinutes && (
         <button
           type="button"
-          className="btn ghost small"
-          style={{ padding: "0 6px", minHeight: 0 }}
+          className="btn ghost small reset"
           onClick={() => onChange(undefined)}
-          title={`Reset to ${step.defaultMinutes} min`}
+          title={
+            step.defaultMinutes === undefined
+              ? "Reset to the default lengths"
+              : `Reset to ${step.defaultMinutes} min`
+          }
         >
           ↺
         </button>
@@ -127,8 +136,7 @@ function FoldCountInput({
       {n !== timeline.defaultFoldCount && (
         <button
           type="button"
-          className="btn ghost small"
-          style={{ padding: "0 6px", minHeight: 0 }}
+          className="btn ghost small reset"
           onClick={() => onChange(undefined)}
           title={`Reset to ${timeline.defaultFoldCount}`}
           aria-label={`Reset to ${timeline.defaultFoldCount} folds`}
@@ -172,34 +180,12 @@ const MIXER_FOLDS =
   " The mixer built the strength: one early set of folds is plenty, none if you mixed to a full windowpane, then leave the dough alone.";
 
 /**
- * Under a track's bulk step: its folds and the guide range. A split dough's folds are base folds,
- * so they keep the base's numbers, and its guide is what is left of the bulk once it is split off.
- * A fixed bulk (a main dough that only rests until its splits) is no bulk to guide: folds only.
- * The dough factor is named but not explained: the track does not say whether it came from the
- * sugar, the fat or the dough's own figure.
+ * A track's bulk guide: the range (for a split, what is left of it once it is split off), what
+ * scaled it, and what to go by. The dough factor is named but not explained: the track does not
+ * say whether it came from the sugar, the fat or the dough's own figure.
  */
-function BulkDetails({
-  track,
-  step,
-  timeline,
-  plan,
-}: {
-  track: DoughTrack;
-  step: TimelineStep;
-  timeline: Timeline;
-  plan: Plan;
-}) {
+function bulkGuide(track: DoughTrack, plan: Plan): string {
   const { bulk, method } = track;
-  // The batch folds every 30 min from the main dough's bulk start, so a split's fold is numbered
-  // from there, even when the main dough's own list stops at the split.
-  const baseStart =
-    method === "split"
-      ? timeline.tracks.find((t) => t.method === "base")?.steps[0]?.start
-      : undefined;
-  const foldNumber = (fold: Date, i: number) =>
-    baseStart
-      ? Math.round((fold.getTime() - baseStart.getTime()) / (FOLD_INTERVAL_MIN * 60_000))
-      : i + 1;
   const factors = [
     ...(bulk.factor !== 1
       ? [
@@ -214,29 +200,184 @@ function BulkDetails({
     method === "separate"
       ? "."
       : ". Go by the dough, not the clock: 50–75 % rise, domed and jiggly.";
+  return [
+    `Guide: ${fmtRange(bulk.minMinutes, bulk.maxMinutes)}`,
+    method === "split" ? " left" : "",
+    ` at ${plan.settings.doughTempC} °C`,
+    factors.length > 0 ? ` (${factors.join(", ")}, a heuristic)` : "",
+    target,
+    plan.standMixer ? MIXER_FOLDS : "",
+  ].join("");
+}
+
+/**
+ * Under a track's bulk step in the By dough view: its folds, numbered as the batch counts them,
+ * and the guide. A fixed bulk (a main dough that only rests until its splits) is no bulk to
+ * guide: folds only.
+ */
+function BulkDetails({
+  track,
+  step,
+  timeline,
+  plan,
+}: {
+  track: DoughTrack;
+  step: TimelineStep;
+  timeline: Timeline;
+  plan: Plan;
+}) {
+  const numbers = foldNumbers(track, timeline);
   return (
     <>
       {track.folds.length > 0 && (
         <div className="folds">
           {track.folds.map((f, i) => (
             <span key={i}>
-              fold {foldNumber(f, i)} · {fmtTime(f)}
+              fold {numbers[i]} · {fmtTime(f)}
             </span>
           ))}
         </div>
       )}
-      {!step.fixed && (
-        <div className="note" style={{ gridColumn: "2 / -1" }}>
-          {/* Text nodes as the one-dough card had them, so the lean print does not move a pixel. */}
-          Guide: {fmtRange(bulk.minMinutes, bulk.maxMinutes)}
-          {method === "split" && " left"}
-          {" at"} {plan.settings.doughTempC} °C
-          {factors.length > 0 && ` (${factors.join(", ")}, a heuristic)`}
-          {target}
-          {plan.standMixer && MIXER_FOLDS}
-        </div>
-      )}
+      {!step.fixed && <div className="note guide">{bulkGuide(track, plan)}</div>}
     </>
+  );
+}
+
+/**
+ * The In order list (§4): every row of `timelineRows` in clock order. A gutter carries a rail per
+ * dough while its bulk runs; a run of rows whose hands-on steps clash is bracketed, and each such
+ * row says what else needs the baker's hands then. Lengths edit the same step ids as By dough.
+ */
+function OrderList({
+  timeline,
+  plan,
+  start,
+  onLength,
+}: {
+  timeline: Timeline;
+  plan: Plan;
+  start: Date;
+  onLength: (ids: string[], minutes: number | undefined) => void;
+}) {
+  const { rows } = timelineRows(timeline);
+  const colours = doughColours(timeline);
+  const slots = timeline.tracks.map((t) => t.doughId);
+  const trackOf = new Map(timeline.tracks.flatMap((t) => t.steps.map((s) => [s.id, t] as const)));
+  const index = new Map(rows.map((r, i) => [r.id, i] as const));
+
+  // One bracket per stretch of rows from the first hands-on clash to the last that meets it.
+  const spans: [number, number][] = [];
+  rows.forEach((r, i) => {
+    if (r.overlaps.length === 0) return;
+    const at = [i, ...r.overlaps.map((id) => index.get(id) ?? i)];
+    const from = Math.min(...at);
+    const to = Math.max(...at);
+    const last = spans[spans.length - 1];
+    if (last && from <= last[1]) last[1] = Math.max(last[1], to);
+    else spans.push([from, to]);
+  });
+  const spanOf = (i: number) => spans.find(([a, b]) => a <= i && i <= b);
+  const tagKey = (r: TimelineRow) => r.doughs.map((d) => `${d.doughId}:${d.name}`).join("|");
+
+  return (
+    <div className={spans.length > 0 ? "order bracketed" : "order"}>
+      {rows.map((r, i) => {
+        const ids = r.id.split("+");
+        const bulk = r.kind === "step" && isBulkStep({ id: ids[0]! });
+        const guides =
+          bulk && !r.fixed
+            ? [...new Set(ids.flatMap((id) => trackOf.get(id) ?? []))].map((t) =>
+                bulkGuide(t, plan),
+              )
+            : [];
+        const notes = [...(r.note?.split("\n") ?? []), ...new Set(guides)];
+        const busy = r.overlaps.flatMap((id) => {
+          const o = rows[index.get(id) ?? -1];
+          return o ? [`${o.label} at ${fmtDayTime(o.start, start)}`] : [];
+        });
+        const span = spanOf(i);
+        // On a phone a dough is named only when it changes from the row above (§4).
+        const named = r.doughs.length > 0 && (i === 0 || tagKey(r) !== tagKey(rows[i - 1]!));
+        const cls = [
+          "step",
+          "order-row",
+          r.kind === "fold" && "fold",
+          span && "bracket",
+          span?.[0] === i && "from",
+          span?.[1] === i && "to",
+        ];
+        return (
+          <div className={cls.filter(Boolean).join(" ")} key={r.id}>
+            <div className="rails" aria-hidden="true">
+              {slots.map((id) => (
+                <span
+                  key={id}
+                  className={
+                    r.rails.includes(id)
+                      ? `dough-rail dough-${colours.get(id) ?? 0}`
+                      : "dough-rail off"
+                  }
+                />
+              ))}
+            </div>
+            <div className="t">
+              {fmtDayTime(r.start, start)}
+              {r.kind === "step" && (
+                <small>
+                  {/* A bulk runs to a time; how long is the guide's to say (§3). */}
+                  {bulk ? `to ${fmtDayTime(r.end, start)}` : fmtDuration(r.minutes)}
+                </small>
+              )}
+            </div>
+            <div className="main">
+              {/* A fixed step's length follows other steps; a fold is a moment. First, so that on
+                  a phone it can sit right of the label with the notes running on under it. */}
+              {r.kind === "step" && !r.fixed && (
+                <DurationInput step={r} onChange={(m) => onLength(ids, m)} />
+              )}
+              <div className="head">
+                <div className="label">{r.label}</div>
+                {r.doughs.length > 0 && (
+                  <div className="tags">
+                    {r.doughs.map((d) => (
+                      <span
+                        className={`dough-tag dough-${d.colour}`}
+                        key={`${d.doughId}:${d.name}`}
+                      >
+                        {d.icon && <span>{d.icon}</span>}
+                        <span className="name">{d.name}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* The names again, for a phone's line under the label; the tags read them out. */}
+              {named && (
+                <div className="names" aria-hidden="true">
+                  {r.doughs.map((d) => (
+                    <span className={`dough-${d.colour}`} key={`${d.doughId}:${d.name}`}>
+                      {d.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {(notes.length > 0 || busy.length > 0) && (
+                <div className="notes">
+                  {notes.map((n, j) => (
+                    <div className="note-planner" key={j}>
+                      {n}
+                    </div>
+                  ))}
+                  {busy.length > 0 && (
+                    <div className="note-planner">hands busy: also {busy.join(", ")}</div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -249,14 +390,25 @@ export function TimelineCard({
   starterTotal,
 }: Props) {
   const start = new Date(plan.startTime);
-  const setOverride = (id: string, minutes: number | undefined) => {
+  const [view, setView] = useState<View>(() => load(VIEW_KEY, "order", isView));
+  usePersisted(VIEW_KEY, view);
+  const setOverrides = (ids: string[], minutes: number | undefined) => {
     const next = { ...(plan.timelineOverrides ?? {}) };
-    if (minutes === undefined) delete next[id];
-    else next[id] = minutes;
+    for (const id of ids) {
+      if (minutes === undefined) delete next[id];
+      else next[id] = minutes;
+    }
     onPlan({ ...plan, timelineOverrides: next });
   };
+  const setOverride = (id: string, minutes: number | undefined) => setOverrides([id], minutes);
   const feedStep = timeline.steps.find((s) => s.id === "feed");
   const { inline, blocks } = placeTracks(timeline);
+  // Decision 24: the main dough on its own reads as one list with no choice of view; any other
+  // plan opens In order unless this browser chose By dough.
+  const multi = blocks.length > 0;
+  const inOrder = multi && view === "order";
+  // Only the main mix rests before the starter goes in; a separate mix never does.
+  const mainMix = timeline.steps.some((s) => s.id === "mix");
   const row = (s: TimelineStep, track?: DoughTrack) => (
     <StepRow key={s.id} step={s} ref={start} onChange={(m) => setOverride(s.id, m)}>
       {track && isBulkStep(s) && (
@@ -268,17 +420,28 @@ export function TimelineCard({
     ...timeline.steps.map((s) => row(s)),
     ...(inline ? inline.steps.map((s) => row(s, inline)) : []),
   ];
+  const byDough = [...blocks].sort((a, b) => RANK[a.method] - RANK[b.method]);
 
   return (
-    <section className="card print-page">
+    <section className="card print-page timeline-card">
       <header>
         <h2>Timeline</h2>
         <span className="sub">
           {fmtDayTime(start)} → {fmtDayTime(timeline.end, start)}
         </span>
+        {multi && (
+          <div className="toggle" role="group" aria-label="Timeline view">
+            <button type="button" aria-pressed={inOrder} onClick={() => setView("order")}>
+              In order
+            </button>
+            <button type="button" aria-pressed={!inOrder} onClick={() => setView("dough")}>
+              By dough
+            </button>
+          </div>
+        )}
       </header>
 
-      <div className="row no-print" style={{ marginBottom: 8 }}>
+      <div className="row no-print options">
         <label className="check">
           <input
             type="checkbox"
@@ -287,15 +450,16 @@ export function TimelineCard({
           />
           <span>Feed starter first</span>
         </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={!!plan.autolyse}
-            onChange={(e) => onPlan({ ...plan, autolyse: e.target.checked })}
-          />
-          {/* Only the main mix rests before the starter goes in; a separate mix never does. */}
-          <span>{blocks.length > 0 ? "Autolyse (main dough)" : "Autolyse"}</span>
-        </label>
+        {mainMix && (
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={!!plan.autolyse}
+              onChange={(e) => onPlan({ ...plan, autolyse: e.target.checked })}
+            />
+            <span>{multi ? "Autolyse (main dough)" : "Autolyse"}</span>
+          </label>
+        )}
         <label className="check">
           <input
             type="checkbox"
@@ -315,29 +479,35 @@ export function TimelineCard({
         />
       )}
 
-      {lead.length > 0 && <div className="steps">{lead}</div>}
+      {inOrder ? (
+        <OrderList timeline={timeline} plan={plan} start={start} onLength={setOverrides} />
+      ) : (
+        <>
+          {lead.length > 0 && <div className="steps">{lead}</div>}
 
-      {blocks.map((track) => {
-        const badge = trackBadge(track);
-        return (
-          <div className="track" key={track.doughId}>
-            <h3>
-              {track.icon && <span>{track.icon}</span>}
-              <span>{trackTitle(track)}</span>
-              {badge && <span className="badge neutral">{badge}</span>}
-            </h3>
-            {track.reason && <p className="reason">{track.reason}</p>}
-            <div className="steps">{track.steps.map((s) => row(s, track))}</div>
-          </div>
-        );
-      })}
+          {byDough.map((track) => {
+            const badge = trackBadge(track);
+            return (
+              <div className="track" key={track.doughId}>
+                <h3>
+                  {track.icon && <span>{track.icon}</span>}
+                  <span>{trackTitle(track)}</span>
+                  {badge && <span className="badge neutral">{badge}</span>}
+                </h3>
+                {track.reason && <p className="reason">{track.reason}</p>}
+                <div className="steps">{track.steps.map((s) => row(s, track))}</div>
+              </div>
+            );
+          })}
+        </>
+      )}
 
       {lead.length === 0 && blocks.length === 0 && (
         <p className="muted">Add some items to see the timeline.</p>
       )}
 
       {timeline.ovenWarnings.length > 0 && (
-        <div className="stack" style={{ marginTop: 10 }}>
+        <div className="stack oven">
           {timeline.ovenWarnings.map((w, i) => (
             <div key={i} className="callout warn">
               {w}
@@ -369,9 +539,9 @@ export function TimelineCard({
         ))}
       </div>
 
-      <details className="no-print" style={{ marginTop: 12 }}>
+      <details className="no-print bulk-table">
         <summary>Bulk fermentation guide table</summary>
-        <p className="muted small" style={{ margin: "6px 0 10px" }}>
+        <p className="note-planner">
           A guide at 20–25 % inoculation, interpolated between rows. Edit it as you learn your
           kitchen. The target is always the dough: for the main dough, 50–75 % rise, domed and
           jiggly.
@@ -419,7 +589,7 @@ export function TimelineCard({
             ))}
           </tbody>
         </table>
-        <div className="row" style={{ marginTop: 8 }}>
+        <div className="row add-row">
           <button
             type="button"
             className="btn"
