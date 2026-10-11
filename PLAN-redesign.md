@@ -516,6 +516,28 @@ Raised in waves 1 and 2, deliberately not folded in:
 9. Long dough names (over about 30 characters) truncate in a native select at 390 px.
 10. A tall Ingredients section pushes a page: the stress plan's page 1 holds only the header. R7
     lets a section break before a split; a section with no split still moves whole.
+11. Delete the card copies of the primitives R7 lifted into `styles.css`: `division.css:19,25,36,10`,
+    `items.css:10,14`, `ingredients.css:12,31,37`, `timeline.css:61,100-117`, `kitchen.css:106,167-184`
+    (line hints at `5d7a405`).
+12. Rows whose only dough is the main dough keep the head's 8 px gap before the label now the dot
+    is gone (`timeline.css:153`, `kitchen.css:121`); wide In order rows with three or more tags
+    leave a gap between label and note (`timeline.css:41`, `grid-template-rows: auto 1fr`).
+13. Lane step times wrap "1 h 30 / min" in the 58 px column (`styles.css` `.lane .step`;
+    pre-existing).
+14. The bracket spans, "hands busy" text and doughs-changed check are copied between
+    `KitchenMode.tsx:50-74` and `TimelineCard.tsx:268-297`: tested helpers in `timelineRows.ts`.
+    A merged row with one differing note shows every note (`timelineRows.ts:248-255`).
+15. The bake window ignores a proof edit (`timeline.ts:386-389`, lib; true before this plan); the
+    top nav is 340 px wide, so 320 px phones zoom out (`.nav`, pre-existing).
+
+---
+
+## 13. Close-out (2026-10-12 00:10)
+
+All eight packages landed on `main` between `27a2009` and `5d7a405`, with three follow-up
+commits (`ce2c2a5` lanes, `9f298c4` editor without colour, `fbb9b27` dead re-export). Gate green:
+198 tests, no `it.fails`, build clean. Print checked with the repo's own harness in Chrome and
+Firefox on six states plus the stress plan: nothing split. Nothing pushed: Ben looks first.
 
 ---
 
