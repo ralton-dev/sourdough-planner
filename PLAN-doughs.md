@@ -48,7 +48,10 @@ chooses the mechanism from what the dough contains, and says why in the plan it 
    `Preset.doughId`, else `lean`. A line's **key** is `presetId` for lean and
    `presetId@doughId` otherwise. Lanes, lane step ids and React keys use the key. Lean keys
    and lean step ids (`mix`, `bulk`, `divide`, `bench`, `shape:loaf` …) are byte-identical to
-   today, so saved plans and their `timelineOverrides` keep working untouched.
+   today, so saved plans and their `timelineOverrides` keep working untouched. A line whose
+   dough id is not in the library keeps its own key, `presetId@<missing id>`, so it never
+   collides with a lean line of the same preset; it computes as lean, is labelled "Lean
+   (dough <id> not found)" and raises `unknown-dough`.
 3. **Two mechanisms, chosen per dough:** `method: "auto" | "split" | "separate"`. Under
    `auto` the effective method is `separate` when the dough has egg, yolk, milk, a sweetness
    whose sugar-equivalent is above 5 % (sugar, honey or a bulk sweetener, not a
@@ -86,7 +89,8 @@ chooses the mechanism from what the dough contains, and says why in the plan it 
     the `SWEETENERS` table (sugar 1, honey 0.8, xylitol 1.2, erythritol 1.5,
     maltitol 0.5, high-intensity 0). No sugar gives 1.0 plus the fat term (R2 "Fermentation
     effects", R4). Shown as "a guide".
-11. **Add-at defaults.** Inclusions: `fold1`. Butter: `mix` up to 10 %, `after-mix` above.
+11. **Add-at defaults.** Inclusions: the §6 per-kind add-at (seed and herb at `mix`, garlic
+    and porridge at `fold2`, the rest `fold1`), `fold1` when the table has none. Butter: `mix` up to 10 %, `after-mix` above.
     Egg, yolk, milk, oil and any sweetness: `mix`. In a split dough everything goes in at the split
     step (`splitAt`, default `fold1`), except `shape` inclusions, which become a note on the
     lane's shape step. `fold1` is 30 min into bulk and `fold2` 60 min, **whatever the fold
@@ -333,7 +337,9 @@ enrichWater  = F_d · Σ e_j·w_j
 addedWater_d = max(0, water_d − starterWater − enrichWater)      (warn when clamped)
 salt_d       = s_d · F_d
 additions    = [each enrichment: pct·F_d] + [each inclusion: pct·F_d] + [soaker water: K·F_d]
-mass_d       = F_d · k_d          (equals addedFlour_d + addedWater_d + starter_d + salt_d + Σ additions)
+mass_d       = F_d · k_d          (= addedFlour_d + addedWater_d + starter_d + salt_d + Σ additions while nothing clamps)
+               when addedWater_d clamps to 0, mass_d is the sum of the lines as weighed (F_d·k_d + the clamped
+               shortfall): checkRow is the truth, and liquid-exceeds-hydration says how much heavier the dough is
 portion_d    = F_d · (1 + H + s)  (split only: base dough to take out)
 ```
 
@@ -641,7 +647,8 @@ without losing edits, and doughs survive a reload and an export.
   `parseBundle` accepts 1 (doughs = `cloneDoughs()`, presets reconciled) and 2.
   `exportBundle`'s `doughs` input is optional until WP-H (decision 21). `isPlan` and
   `newPlan` are untouched: `weightsIncludeAdditions` is optional and unset means on, so a new
-  lean plan is byte-identical to today's.
+  lean plan is byte-identical to today's. Pass `doughs` explicitly at every `exportBundle`
+  call in `storage.test.ts`.
 - Tests: `presets.test.ts` (new): `burger-bun` is ≥ 100 g on `soft-bun`; `roll` is 100 g;
   reconcile appends missing ids, replaces an entry deep-equal to `LEGACY_PRESETS.roll`,
   leaves an edited `roll` alone, preserves user order and user-added presets.
@@ -670,7 +677,10 @@ specifies, and the five calc pins flip to plain assertions.
   per-piece `doughEach`/`additionsEach`/`pieceEach` follow §4 (decision 6); `perDough`,
   `perMix` builders; `requiredDough` is superseded by
   `requiredFlour` — delete it and update its callers (grep: `calc.ts` only).
-  Unallocated flour in starter mode belongs to `lean`.
+  Unallocated flour in starter mode belongs to `lean`. Rename `_doughs` to `doughs` and drop
+  its eslint-disable. `salt-range` also checks each separate dough's own salt; `below-min`
+  names the line (preset and dough). Example C's `mass` is the sum of the lines, 959.556 g,
+  not F·k (§4). Pass `doughs` explicitly at every `computePlan` call in `calc.test.ts`.
 - `warnings.ts`: `high-hydration` uses each dough's `trueHydration` against the sensitive
   presets **on that dough**; new codes `liquid-exceeds-hydration` (warn), `split-needs-mix`
   (warn, names the offending contents), `unknown-dough` (warn), `inclusion-load` (info,
@@ -711,6 +721,12 @@ Size **L**. Depends: WP-A.
   `lineKey`, then `ovenConflicts(lanes)`. Base track keeps ids `bulk`/`divide`/`bench` and
   the existing defaults. `Timeline.folds`/`Timeline.bulk` stay as deprecated aliases of
   `tracks[0]` (decision 21; WP-G deletes them). `defaultFoldCount`/`foldCountFor` unchanged.
+  Rename `_doughs` to `doughs` and drop its eslint-disable. `ovenConflicts` names lanes by
+  lane name including the dough ("Loaf (Jalapeño cheddar)"). `end` and the lane fallback use
+  each track's `benchEnd`, not the base one. Move the existing `t.folds`/`t.bulk` reads in
+  `timeline.test.ts` to `tracks[0]`, keeping the alias-equality test in one block marked
+  `// deprecated aliases: WP-G deletes`. Pass `doughs` explicitly at every `buildTimeline`
+  call in the test file.
 - Dough `bake` override applied to the lane's `bakeTempC`, `steam`, and the bake note (wash
   appended: "190 °C, 18–22 min, egg wash").
 - Flip pins F and G (H passes already); add: a split dough with `bulkFactor` 1.2 ends later than the base and its
@@ -786,7 +802,9 @@ its add-ins, pieces grouped by dough with their composition, and the bake notes.
 - `DivisionCard.tsx`: `Pieces` **keeps its name and props** and groups by dough with a
   heading per group; each piece shows `count × pieceEach` and, when `additionsEach > 0`,
   "506 g dough + 94 g add-ins" (tick box on) or "600 g dough + 112 g add-ins = 712 g" (off);
-  the card's sub line says which convention is in force. `key = l.key`.
+  the card's sub line says which convention is in force. `key = l.key`. The "used of
+  usable" line compares dough grams (`doughEach × count`, per dough) with that dough's
+  `usable`, never piece grams with mix totals (`DivisionCard.tsx:54,60` today).
 - `NotesCard.tsx` (new): a textarea bound to `plan.notes`, printed as a card, heading
   "Notes". Rendered by WP-H.
 - `Warnings` unchanged.
@@ -813,6 +831,9 @@ step, and lanes labelled with their dough; kitchen mode and print mirror it.
   and key; durations editable per step id as now. Delete the reads of `timeline.folds` and
   `timeline.bulk` and, with them, the deprecated aliases in `timeline.ts` (decision 22:
   report both symbols).
+- `FeedHelper` gets `undefined` in items mode (`TimelineCard.tsx:183`, no `result` in the
+  card): add an optional `starterTotal?: number` prop to `TimelineCard`, pass it to the
+  helper; WP-H wires `result.starter`.
 - `KitchenMode.tsx`: same structure read-only; `plan.notes` under the title; dough notes
   come through `IngredientsTable`; the tangzhong step and the tick-box wording arrive through
   `timeline.steps` and `Pieces`, nothing extra to render.
@@ -828,7 +849,8 @@ step, and lanes labelled with their dough; kitchen mode and print mirror it.
 `grep -n "timeline.folds\|timeline.bulk" src/` returns nothing.
 
 Owns: `src/components/TimelineCard.tsx`, `src/components/KitchenMode.tsx`,
-`src/styles.css`, and the two deprecated aliases in `src/lib/timeline.ts`.
+`src/styles.css`, the two deprecated aliases in `src/lib/timeline.ts`, and the alias-equality
+block marked `// deprecated aliases: WP-G deletes` in `src/lib/timeline.test.ts`.
 Size **L**. Depends: WP-D. Owns the stylesheet choke point: runs with no other CSS editor.
 
 ### WP-H · Wire-up, defaults made required, README
@@ -838,7 +860,8 @@ says what the maths is now.
 
 - `App.tsx`: `doughs` state from `initial.doughs`, `usePersisted(KEYS.doughs, doughs)`;
   `computePlan(plan, presets, doughs)`, `buildTimeline(plan, presets, bulkTable, doughs)`;
-  pass `doughs` to `ItemsCard`, `doughs`/`onDoughs` to `PresetsPage`; render `NotesCard`
+  pass `doughs` to `ItemsCard`, `doughs`/`onDoughs` to `PresetsPage`, `result.starter` to
+  `TimelineCard` as `starterTotal`; render `NotesCard`
   after `DivisionCard`; export includes doughs; import replaces doughs (confirm text updated).
 - Make every decision-21 default required: `computePlan`/`buildTimeline` `doughs`
   parameter, `ItemsCard.doughs`, `PresetsPage.doughs`/`onDoughs`, `exportBundle.doughs`.
@@ -898,6 +921,12 @@ props (stated in WP-F). Standing rules beneath the table:
   wave, and that package runs with nothing else that could touch them.
 - A package needing one line in a file it does not own says so in its hand-back and leaves
   the line to the owner or to WP-H; it does not edit the file.
+- Wave-2 packages pass `doughs` explicitly at every `computePlan`, `buildTimeline` and
+  `exportBundle` call in the test files they own, so WP-H can make the parameters required
+  without editing tests.
+- Accepted transient: between wave 2 and wave 3 the Timeline card and kitchen mode show only
+  the common prefix, because `bulk`/`divide`/`bench` move into `tracks[0]` (WP-D) before
+  anything renders tracks (WP-G). Wave-3 agents do not patch around it.
 
 Rough total: four waves, eight packages.
 
@@ -930,6 +959,14 @@ grep and clear, each of which a package must report as fixed or deliberately kep
 - `weightEach` everywhere — the planned weight is no longer always the finished piece
   (decision 6). Every reader (`DivisionCard`, `KitchenMode`, `SavedPlans`' summary,
   `suggest()`) says which of `pieceEach` and `doughEach` it means.
+- `timeline.ts` `ovenConflicts` — names lanes by preset name; two loaves read "Loaf, Loaf"
+  (WP-D).
+- `timeline.ts` `end` and the lane fallback — use the base `bench.end` (WP-D).
+- `warnings.ts` `salt-range`, `below-min` — plan salt only; preset name only (WP-C).
+- `ItemsCard.tsx` row keys — `p.id` (WP-F).
+- `DivisionCard.tsx` "used of usable" — piece grams against mix totals (WP-F).
+- `TimelineCard.tsx` `FeedHelper` — `undefined` in items mode; needs the total starter
+  (WP-G, wired by WP-H).
 
 **What the fixtures avoid.** The reference bake is a household of tidy numbers: 250 g
 starter, round percentages, no bench loss, one of everything. The awkward fixture WP-C and
