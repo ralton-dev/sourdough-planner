@@ -1,15 +1,19 @@
-import { DEFAULT_PRESETS, clonePresets } from "./presets";
+import { DEFAULT_DOUGHS, cloneDoughs } from "./doughs";
+import { DEFAULT_PRESETS, LEGACY_PRESETS, clonePresets, reconcileDefaults } from "./presets";
 import { DEFAULT_BULK_TABLE, type BulkRow } from "./timeline";
-import { DEFAULT_SETTINGS, type Plan, type Preset } from "./types";
+import { DEFAULT_SETTINGS, LEAN_DOUGH_ID, type Dough, type Plan, type Preset } from "./types";
 import { newId } from "./ids";
 
 const NS = "sourdough.v1";
 export const KEYS = {
   presets: `${NS}.presets`,
+  doughs: `${NS}.doughs`,
   plan: `${NS}.plan`,
   bulkTable: `${NS}.bulkTable`,
   savedPlans: `${NS}.savedPlans`,
   ui: `${NS}.ui`,
+  /** The default preset and dough ids this browser has been given (`loadAll`, decision 14). */
+  seeded: `${NS}.seeded`,
 } as const;
 
 export interface UiPrefs {
@@ -47,13 +51,16 @@ export function load<T>(key: string, fallback: T, validate?: (v: unknown) => v i
   }
 }
 
-export function save(key: string, value: unknown): void {
+/** Writes `value` as JSON. False when it could not be written. */
+export function save(key: string, value: unknown): boolean {
   const s = store();
-  if (!s) return;
+  if (!s) return false;
   try {
     s.setItem(key, JSON.stringify(value));
+    return true;
   } catch {
     // Quota or private mode: the plan still works for this session.
+    return false;
   }
 }
 
@@ -84,6 +91,19 @@ export const isPresetList = (v: unknown): v is Preset[] =>
       p && typeof p === "object" && typeof p.id === "string" && typeof p.defaultWeight === "number",
   );
 
+/** Each dough has a string id and name and its enrichment and inclusion lists. */
+export const isDoughList = (v: unknown): v is Dough[] =>
+  Array.isArray(v) &&
+  v.every(
+    (d) =>
+      d &&
+      typeof d === "object" &&
+      typeof d.id === "string" &&
+      typeof d.name === "string" &&
+      Array.isArray(d.enrichments) &&
+      Array.isArray(d.inclusions),
+  );
+
 export const isBulkTable = (v: unknown): v is BulkRow[] =>
   Array.isArray(v) && v.every((r) => r && typeof r === "object" && typeof r.tempC === "number");
 
@@ -96,9 +116,92 @@ export const isPlan = (v: unknown): v is Plan =>
 export const isSavedPlans = (v: unknown): v is SavedPlan[] =>
   Array.isArray(v) && v.every((s) => s && typeof s === "object" && isPlan((s as SavedPlan).plan));
 
-export function loadAll() {
+/** Decision 1: the lean dough is the batch settings, never in the library, stored or exported. */
+const withoutLean = (doughs: Dough[]): Dough[] => doughs.filter((d) => d.id !== LEAN_DOUGH_ID);
+
+/** The default ids a browser has been given, per library (decision 14). */
+interface Seeded {
+  presets?: string[];
+  doughs?: string[];
+}
+
+const isIdList = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((x) => typeof x === "string");
+
+const isSeeded = (v: unknown): v is Seeded =>
+  !!v &&
+  typeof v === "object" &&
+  !Array.isArray(v) &&
+  [(v as Seeded).presets, (v as Seeded).doughs].every((l) => l === undefined || isIdList(l));
+
+/** The entries of `defaults` whose ids are in `ids`. */
+const given = <T extends { id: string }>(defaults: readonly T[], ids: readonly string[]): T[] =>
+  defaults.filter((d) => ids.includes(d.id));
+
+/** `ids`, then every default id not already among them. */
+const withIds = (ids: readonly string[] | undefined, defaults: readonly { id: string }[]) => [
+  ...new Set([...(ids ?? []), ...defaults.map((d) => d.id)]),
+];
+
+/**
+ * One library as stored, reconciled with its defaults (decision 14). With nothing usable stored it
+ * is the defaults, and whatever is stored is left as it is. A stored list the reconcile changed is
+ * written back; `ok` is false only when that write failed, so the caller does not record defaults
+ * as given that the stored list never received.
+ */
+function loadLibrary<T extends { id: string }>(
+  key: string,
+  valid: (v: unknown) => v is T[],
+  defaults: T[],
+  previous: readonly T[],
+): { list: T[]; ok: boolean } {
+  const stored = load<unknown>(key, undefined);
+  if (!valid(stored)) return { list: defaults, ok: true };
+  const list = reconcileDefaults(stored, defaults, previous);
+  const changed = list.length !== stored.length || list.some((e, i) => e !== stored[i]);
+  return { list, ok: !changed || save(key, list) };
+}
+
+export interface Loaded {
+  presets: Preset[];
+  doughs: Dough[];
+  plan: Plan;
+  bulkTable: BulkRow[];
+  savedPlans: SavedPlan[];
+  ui: UiPrefs;
+}
+
+/**
+ * Everything the app keeps, as stored. Presets and doughs are reconciled with the shipped defaults
+ * (decision 14): a list saved before a default existed gains it, an unedited old default is
+ * refreshed in place, and edits, deletions, order and user-added entries stay. A list the reconcile
+ * changed is written straight back, then the default ids given are recorded under `KEYS.seeded`,
+ * so a default the user deletes after this load stays deleted. Nothing else is written.
+ */
+export function loadAll(): Loaded {
+  const seeded = load<Seeded>(KEYS.seeded, {}, isSeeded);
+  const presets = loadLibrary(KEYS.presets, isPresetList, clonePresets(DEFAULT_PRESETS), [
+    // A browser from before the record was given exactly the legacy list.
+    ...LEGACY_PRESETS,
+    ...given(DEFAULT_PRESETS, seeded.presets ?? []),
+  ]);
+  const doughs = loadLibrary(
+    KEYS.doughs,
+    isDoughList,
+    cloneDoughs(),
+    // No dough library predates the record, so one stored without it was seeded from these.
+    given(DEFAULT_DOUGHS, seeded.doughs ?? DEFAULT_DOUGHS.map((d) => d.id)),
+  );
+  const record: Seeded = {
+    presets: withIds(seeded.presets, DEFAULT_PRESETS),
+    doughs: withIds(seeded.doughs, DEFAULT_DOUGHS),
+  };
+  if (presets.ok && doughs.ok && JSON.stringify(record) !== JSON.stringify(seeded)) {
+    save(KEYS.seeded, record);
+  }
   return {
-    presets: load(KEYS.presets, clonePresets(DEFAULT_PRESETS), isPresetList),
+    presets: presets.list,
+    doughs: withoutLean(doughs.list),
     plan: load(KEYS.plan, newPlan(), isPlan),
     bulkTable: load(
       KEYS.bulkTable,
@@ -112,33 +215,62 @@ export function loadAll() {
 
 export interface ExportBundle {
   app: "sourdough-planner";
-  version: 1;
+  /** 1 up to 187a90a; 2 adds the dough library (decision 16). */
+  version: 1 | 2;
   exportedAt: string;
   presets: Preset[];
+  /** Version 2. Optional until WP-H passes the app's library (decision 21). */
+  doughs?: Dough[];
   bulkTable: BulkRow[];
   savedPlans: SavedPlan[];
   plan: Plan;
 }
 
+/** What an import yields, whatever its version: always with a dough library. */
+export type ImportedBundle = ExportBundle & { doughs: Dough[] };
+
 export function exportBundle(data: Omit<ExportBundle, "app" | "version" | "exportedAt">): string {
+  const { doughs, ...rest } = data;
   const bundle: ExportBundle = {
     app: "sourdough-planner",
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
-    ...data,
+    ...rest,
+    ...(doughs && { doughs: withoutLean(doughs) }),
   };
   return JSON.stringify(bundle, null, 2);
 }
 
-export function parseBundle(text: string): ExportBundle {
+/**
+ * Reads an export (decision 16). Version 1, up to 187a90a, has no doughs: it gets the default
+ * library, and its presets are reconciled the way a list stored then would be. Version 2 is taken
+ * as written; one without doughs (exported before the app passed them) gets the defaults too. A
+ * missing version reads as 1; any other version, and anything malformed, is rejected.
+ */
+export function parseBundle(text: string): ImportedBundle {
   const v: unknown = JSON.parse(text);
   if (!v || typeof v !== "object" || (v as ExportBundle).app !== "sourdough-planner") {
     throw new Error("Not a sourdough-planner export.");
   }
   const b = v as ExportBundle;
+  const version: unknown = (v as { version?: unknown }).version ?? 1;
+  if (version !== 1 && version !== 2) {
+    throw new Error(`This export is version ${String(version)}; this app reads versions 1 and 2.`);
+  }
   if (!isPresetList(b.presets)) throw new Error("Export has no valid presets.");
+  if (version === 2 && b.doughs !== undefined && !isDoughList(b.doughs)) {
+    throw new Error("Export has invalid doughs.");
+  }
   if (!isBulkTable(b.bulkTable)) throw new Error("Export has no valid bulk table.");
   if (!isSavedPlans(b.savedPlans ?? [])) throw new Error("Export has invalid saved plans.");
   if (!isPlan(b.plan)) throw new Error("Export has no valid plan.");
-  return { ...b, savedPlans: b.savedPlans ?? [] };
+  const legacy = version === 1;
+  return {
+    ...b,
+    presets: legacy
+      ? reconcileDefaults(b.presets, clonePresets(DEFAULT_PRESETS), LEGACY_PRESETS)
+      : b.presets,
+    doughs: !legacy && b.doughs ? withoutLean(b.doughs) : cloneDoughs(),
+    savedPlans: b.savedPlans ?? [],
+  };
 }
