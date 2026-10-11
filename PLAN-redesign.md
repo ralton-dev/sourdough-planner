@@ -50,7 +50,11 @@ by default). New:
 26. **Dough colours.** The main dough is neutral. Each other dough takes `--dough-1` … `--dough-5`
     by its position among `result.doughs` with `method !== "base"` (library order, the order calc
     and the timeline both use; `tracks[i].doughId` maps the same way), wrapping after five. Colour
-    is never the only carrier: icon and name travel with it. Settled with Ben.
+    is never the only carrier: icon and name travel with it. Settled with Ben. Amended in wave 2:
+    the Doughs editor shows no colour, because it has no plan to colour by and a library-position
+    colour disagreed with the plan's ("violet there, blue here"); a stable per-dough colour across
+    plans needs `DoughResult.libraryIndex` from the lib and is a follow-up (§12). The main dough
+    carries no dot on any card.
 27. **Presentation helpers are pure and tested.** `src/components/*.ts` (no JSX) such as
     `timelineRows.ts` get a vitest file next to them (`vitest.config.ts` already includes
     `src/**/*.test.ts`). Components stay untested and looked at.
@@ -85,6 +89,17 @@ by default). New:
     (it needs `PlanWarning.doughId`, a lib change beyond R8's remit).
 35. **Percentages read "65 %"**: `fmtPct` drops a trailing `.0` and puts a thin space before the
     sign; the number itself does not change. Tests that assert "75.0%" are updated by R8.
+36. **Wave-2 calls, kept.** The Ingredients card has no "Total dough" row: the total sits once on
+    the section's heading row and the check row spans both columns; the library's stock add-in
+    notes are the planner's words (`.note-planner`), only what the baker typed is `.note-own`; the
+    starter line reads "ready by the first mix: 151 g for the main dough and 116 g for Soft bun
+    dough" and shows only in items mode. The Doughs editor opens on Basics with every other part
+    closed and summarised in one line (the literal "closed unless it holds values" rule missed the
+    size budget by a third). A merged In order row is fixed if any part is, keeps a shared
+    `defaultMinutes` only when the parts agree, and shows differing notes one per line led by the
+    dough or lane name; its length box edits every step on it, and a one-sided override un-merges
+    the row and shows the clash. The feed row has no dough tag; `mix` and `autolyse` are the main
+    dough's.
 
 ---
 
@@ -476,6 +491,31 @@ and a three-paragraph dough note; a plan with no base mix and a feed; the 390 px
 view; a print where a section is taller than a page. The live defect will be in the one none of
 these cover, found by Ben on a real bake: R7's two-browser print and the screenshots are part of
 the gate, not a courtesy.
+
+---
+
+## 12. Follow-ups outside this plan
+
+Raised in waves 1 and 2, deliberately not folded in:
+
+1. A stable per-dough colour across plans: `DoughResult.libraryIndex` from calc, one tested
+   helper replacing `doughColour` (`DivisionCard.tsx`), `doughColours` (`timelineRows.ts`) and the
+   editor's deleted `libraryColour`.
+2. `KEYS.timelineView` in `storage.ts` (the card hard-codes the key); `fmtPctRange` and the
+   editor's two-decimal amounts on the "65 %" rule; `.callout`'s 0.93rem onto the type scale.
+3. Export the lib's reserve-water and whole-base rules (`timeline.ts`) so the Ingredients card
+   stops mirroring them; a flag on `AdditionLine.note` saying who wrote it.
+4. `ItemsCard` computes `computePlan` a second time for its colours; pass `result` from `App.tsx`.
+5. The starter line lives in `IngredientsCard`, so kitchen mode does not show it.
+6. A merged split row's note repeats the dough's name (`splitStep`, `timeline.ts`); the butter
+   hint "above 10 % it goes in after the gluten is built" shows on split doughs too (`doughs.ts`).
+7. `fitToText` exists twice (`NotesCard.tsx`, `DoughsCard.tsx`); Firefox 157 has `field-sizing`.
+8. The main dough's heading shows the whole bowl's usable figure although splits take part of it
+   (the old meaning; worth Ben's eye); "2 × 719 g · 1437 g total" rounds the piece and the total
+   separately (pre-existing).
+9. Long dough names (over about 30 characters) truncate in a native select at 390 px.
+10. A tall Ingredients section pushes a page: the stress plan's page 1 holds only the header. R7
+    lets a section break before a split; a section with no split still moves whole.
 
 ---
 
