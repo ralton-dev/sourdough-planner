@@ -105,12 +105,17 @@ chooses the mechanism from what the dough contains, and says why in the plan it 
 14. **Presets.** `roll` becomes "Bread roll", 100 g (70–140), lean, 220 °C with steam,
     18–22 min (R1 bap/bun size). New: `dinner-roll` 70 g, `burger-bun` 120 g,
     `hot-dog-bun` 90 g, all on `soft-bun`, 190 °C, no steam (§6). Existing browsers:
-    `reconcileDefaults` appends missing ids and replaces a stored entry only when it is
-    deep-equal to its **previous** default; anything the user edited is left alone.
+    `reconcileDefaults` appends a default only when its id is in neither the stored list nor
+    the browser's seeded record (`sourdough.v1.seeded`: the default ids this browser has
+    already been given, written by `loadAll`), so a default the user deleted stays deleted;
+    it replaces a stored entry only when it is deep-equal to its **previous** default
+    (`LEGACY_PRESETS`); anything the user edited is left alone. Amended 2026-10-11 by WP-B:
+    the first wording resurrected deletions on every reload.
 15. **The §5.5 reference bake is frozen** on a `REF_PRESETS` fixture inside `calc.test.ts`,
     not on `DEFAULT_PRESETS`. Its numbers (1000 / 718.75 / 250 / 22.5 / 1991.25, loaf
     605.625) must not move by a gram, now or in any later plan.
-16. **Storage:** namespace stays `sourdough.v1`; new key `sourdough.v1.doughs`; export
+16. **Storage:** namespace stays `sourdough.v1`; new keys `sourdough.v1.doughs` and
+    `sourdough.v1.seeded` (decision 14); export
     bundle `version: 2` adds `doughs`; `parseBundle` accepts version 1 (doughs = defaults,
     presets reconciled) and 2. Nothing destructive.
 17. **Doughs are edited on the Presets page** as a Doughs card between Presets and Backup.
@@ -310,8 +315,10 @@ if any, is one of them) with water fraction _w_j_, _I_ = Σ inclusion fractions,
 Split doughs use the base _H_ and _s_ (decision 9).
 
 ```
-k_dough_d    = 1 + H + s + Σ e_j·(1 − w_j)                  dough grams per flour gram, add-ins out
+k_dough_d    = 1 + H + s + Σ e_j·(1 − w_j)                  separate: the enrichment water comes off the water line
+k_dough_d    = 1 + H + s + Σ e_j                            split: the base is already mixed, nothing comes off it
 k_d          = k_dough_d + I + K                             dough grams per flour gram, add-ins in
+trueHydration = H (separate) or H + Σ e_j·w_j (split)        a buttered split loaf is wetter than the base
 usablePerFlour_d = (weightsIncludeAdditions ? k_d : k_dough_d) · (1 − L)       decision 6
 flour needed by a line = count × weightEach / usablePerFlour_d
 per piece, on:   doughEach = weightEach · k_dough_d / k_d   additionsEach = weightEach · (I + K) / k_d        pieceEach = weightEach
@@ -342,6 +349,20 @@ mass_d       = F_d · k_d          (= addedFlour_d + addedWater_d + starter_d + 
                shortfall): checkRow is the truth, and liquid-exceeds-hydration says how much heavier the dough is
 portion_d    = F_d · (1 + H + s)  (split only: base dough to take out)
 ```
+
+Rules §4 was silent on, settled in wave 2: in starter mode lean absorbs a shortage first; if
+the library doughs alone need more flour than the batch holds, lean gets none and they shrink
+in proportion. A mix whose total flour is 0 is absent: items mode with no lean or split line,
+starter mode when the separate doughs take the whole batch, or no flour at all. It is omitted
+from `mixes` and its doughs from `doughs` (a base mix takes its split doughs with it; they can
+only be empty too). Otherwise starter mode keeps lean as the home of the spare flour. Spare is reported as `flour × k_base × (1 − L)`, the usable base
+dough the old code reported. `checkRow` allows ±2 g plus 0.5 g per addition line.
+
+**Worked example A3 — a split enrichment** (REF settings, starter mode 250 g; `loaf` ×1 at
+600 on `buttered`, butter 8 % split, beside the flexing lean loaf of example A): k = 1 + 0.75
+
+- 0.02 + 0.08 = 1.85, F = 324.324, portion 574.054, butter 25.946, mass 600.000, `pieceEach`
+  600, true hydration 76.28 %; one mix, §5.5 totals unchanged.
 
 **Mixes.** Base mix = lean + every split dough, pooled: its `Ingredients` are the plain
 formula over `Σ F_d` (so the base mix is what you weigh and mix; the splits come out of it
@@ -434,13 +455,14 @@ export interface DoughTrack {
   folds: Date[];
   bulk: BulkEstimate & { usedMinutes: number; doughFactor: number };
   benchEnd: Date;
+  reason: string; // DoughResult.reason
 }
 export interface Timeline {
   steps: TimelineStep[]; // the common prefix: tangzhong@<id>…, feed?, autolyse?, mix
   tracks: DoughTrack[]; // base first, then separate and split doughs in library order
   foldCount: number;
   defaultFoldCount: number;
-  lanes: Lane[]; // Lane gains key, doughId, doughName
+  lanes: Lane[]; // Lane gains key, doughId, doughName, label (format's lineLabel, re-exported by calc)
   ovenWarnings: string[];
   end: Date;
   /** @deprecated aliases of tracks[0]; WP-G deletes them with the UI that read them. */
@@ -448,6 +470,16 @@ export interface Timeline {
   bulk: BulkEstimate & { usedMinutes: number };
 }
 ```
+
+`buildTimeline(plan, presets, table, doughs = [], result = computePlan(plan, presets, doughs))`:
+the timeline reads every gram, portion, addition line, mix length and lane from `computePlan`'s
+result and computes none of it itself (settled in wave 2 after both agents found two copies of
+the maths drifting at .5 g ties); `App.tsx` passes the result it already has. When the base mix
+is absent (§4) there is no `mix`, no `autolyse` and no base track: the prefix is the tangzhong
+steps and the feed, the first `mix@<id>` starts at its end, and `tracks[0]` is the first track
+present. The timeline's test for "absent": no base mix in `result.mixes` (or its flour ≤ 0)
+and no line riding on it; the second clause keeps a starter-mode plan with 0 g of starter from
+losing its lean lanes while the field is being cleared.
 
 Step ids and placement:
 
@@ -466,16 +498,19 @@ sugar, so bake to 88–93 °C inside rather than to colour, and a young levain k
 or autolyse; 15 min when a feed or autolyse follows, 45 min otherwise, decision 20) reads
 "Tangzhong for Soft sandwich dough: cook 22 g flour with 108 g water, stirring, to 65 °C, a
 thick paste that holds a line. Cool to room temperature before it goes in. Made the day
-before and kept in the fridge is fine: bring it back to room temperature." `mix@soft-sandwich`
+before and kept in the fridge is fine: bring it back to room temperature. If it waits more
+than about two hours (it will while the starter feeds), keep it in the fridge." `mix@soft-sandwich`
 then opens with "Cooled tangzhong in with the milk and water," before the enriched routine.
 
 Folds: base and separate tracks get `foldCount` folds at 30-min intervals from their own
 bulk start (existing rule); a split track lists the base folds that fall after its split.
 Lanes start at their track's `benchEnd`; lane ids are `shape:<key>`, `proof:<key>`,
 `bake:<key>`; a lane's bake temperature and steam come from the dough's `bake` override
-when set (decision 12), its wash goes into the bake note. `ovenConflicts` is unchanged and
-now sees two lanes for two loaves on different doughs — that is correct, they are two
-loaves.
+when set (decision 12), its wash goes into the bake note as "190 °C, 18–22 min, wash: egg + a
+splash of milk". `ovenConflicts` keeps its logic, names lanes by `label`, and now sees two
+lanes for two loaves on different doughs — that is correct, they are two loaves. Example B
+raises one itself: with `REF_PRESETS` the roll proofs 60 min, so `roll@soft-bun` bakes
+16:20–16:42 against the loaf.
 
 Worked timeline (example B, start 09:00, 24 °C, hand mixed): `mix` 09:00–09:10;
 `mix@soft-bun` 09:10–09:30; `bulk` 09:10–14:10 with folds 09:40 10:10 10:40 11:10;
@@ -484,10 +519,11 @@ Worked timeline (example B, start 09:00, 24 °C, hand mixed): `mix` 09:00–09:1
 lane `loaf` shape 14:50, proof 90, bake 16:30–17:15; lane `roll@soft-bun` shape 15:10, proof
 per preset. With the `sweet-bun` dough of B2 instead, its bulk runs 345 min to 15:15 and
 everything on that track shifts 45 min later.
-Worked timeline (example B3, start 09:00, no feed, no autolyse): `tangzhong@soft-sandwich`
-09:00–09:45, `mix` 09:45–09:55, `mix@soft-sandwich` 09:55–10:15, `bulk@soft-sandwich`
-10:15–15:15 (300 min, factor 1). With `feedStarter` on instead: `tangzhong@soft-sandwich`
-09:00–09:15, `feed` 09:15–15:15, `mix` 15:15–15:25.
+Worked timeline (example B3, start 09:00, no feed, no autolyse; the base mix is absent, so
+there is no `mix` step and no base track): `tangzhong@soft-sandwich` 09:00–09:45,
+`mix@soft-sandwich` 09:45–10:05, `bulk@soft-sandwich` 10:05–15:05 (300 min, factor 1), the
+loaf bakes 17:25–18:10. With `feedStarter` on instead: `tangzhong@soft-sandwich` 09:00–09:15,
+`feed` 09:15–15:15, `mix@soft-sandwich` 15:15–15:35.
 Worked timeline (example A): `split@jalapeno-cheddar` 09:40–09:50, `bulk@jalapeno-cheddar`
 09:50–14:10, its folds 10:10 10:40 11:10; two `loaf` lanes, keyed `loaf` and
 `loaf@jalapeno-cheddar`, both baking 16:30–17:15 → one oven-clash warning.
@@ -616,8 +652,8 @@ the timeline — with the app compiling and behaving exactly as today.
   end and lasts 20 min, `bulk@soft-bun` = 300 min and `bulk@sweet-bun` = 345 min, its folds
   at +30/+60/+90/+120 from its own bulk start, lane `roll@soft-bun` bake note "190 °C" and no
   steam; with `soft-sandwich` plus its tangzhong (B3): `tangzhong@soft-sandwich` is
-  `steps[0]`, 45 min without a feed and 15 min with `feedStarter` on, `mix` starting at its
-  end, its note containing "22 g flour" and "108 g water", and the `mix@soft-sandwich` note
+  `steps[0]`, 45 min without a feed and 15 min with `feedStarter` on, the first mix starting
+  at its end, its note containing "22 g flour" and "108 g water", and the `mix@soft-sandwich` note
   starting "Cooled tangzhong"; (H) base step ids and
   times for the all-lean plan are unchanged (`["mix","bulk","divide","bench"]`, folds as
   today) — this one passes now and must keep passing.
@@ -728,7 +764,7 @@ Size **L**. Depends: WP-A.
   `// deprecated aliases: WP-G deletes`. Pass `doughs` explicitly at every `buildTimeline`
   call in the test file.
 - Dough `bake` override applied to the lane's `bakeTempC`, `steam`, and the bake note (wash
-  appended: "190 °C, 18–22 min, egg wash").
+  appended: "190 °C, 18–22 min, wash: egg + a splash of milk").
 - Flip pins F and G (H passes already); add: a split dough with `bulkFactor` 1.2 ends later than the base and its
   divide follows; `splitAt: "mix"` starts the split at mix end; an override on
   `bulk@soft-bun` cascades into its divide, bench and lanes but not into the base track;
@@ -761,10 +797,13 @@ Size **L**. Depends: WP-A.
   out of the mix and puts a make-it-first step on the timeline."; split-at
   (split only); bulk factor (placeholder = derived default, "a guide"); bake override
   (°C, steam, wash); notes textarea labelled "What you did and how it went". Add, delete
-  (confirm; "plans using it fall back to the main dough"), move, reset to defaults.
+  (confirm, naming the presets whose default dough it is, and saying that plans using it
+  fall back to the main dough with an `unknown-dough` warning), move, reset to defaults.
 - `PresetsPage.tsx`: render `<DoughsCard>` between Presets and Backup; `PresetForm` gains a
   "Dough" select (lean + library) writing `doughId`; the Backup card text mentions doughs.
-  New props `doughs?`, `onDoughs?` default to `[]`/no-op until WP-H.
+  New props `doughs?`, `onDoughs?` default to `[]`/no-op until WP-H. The collapsed preset
+  summary (`PresetsPage.tsx:86-89`) shows the dough; the select shows a dangling id as
+  "<id> (not found)".
 - Reuse existing classes only (`card`, `preset-card`, `fields`, `field`, `stack`, `row`,
   `badge`, `muted`, `small`, `callout`, `check`); `styles.css` belongs to WP-G this wave.
   Percent fields use `NumberField` with `scale={100}` like `SettingsCard`.
@@ -790,21 +829,28 @@ its add-ins, pieces grouped by dough with their composition, and the bake notes.
   "Planned weights include add-ins" bound to `plan.weightsIncludeAdditions` through the
   existing `onChange` (unticking writes `false`; ticking deletes the key), with the hint
   "Ticked, a 600 g jalapeño loaf is 600 g finished with 506 g of dough in it. Unticked, it is
-  600 g of dough with the add-ins on top." (decision 6).
+  600 g of dough with the add-ins on top." (decision 6). A row whose preset carries a
+  `doughId` lands on that dough and its badge names it ("separate mix: Soft bun dough"); the
+  count field's aria-label uses `lineLabel` so two rows of one preset differ.
 - `IngredientsCard.tsx`: `IngredientsTable` **keeps its name and props** and now renders one
   table per `result.mixes` entry (heading = `mix.label` with "Mixed separately: …" or "Split
   off at fold 1: …" from `DoughResult.reason`), each with its add-in lines, its own check
   row, and the dough notes under it; a mix with a tangzhong shows a "Tangzhong — make first"
-  block above its lines (the two lines with their grams and the cook note from the
-  `AdditionLine`), and the flour and liquid lines below it are what is left after the
+  block above its lines (the first two entries of `mix.additions`, with their grams and the
+  cook note; they are not on the `DoughResult`), and the flour and liquid lines below it are what is left after the
   tangzhong (decision 20); the header sub shows total flour and the base true hydration.
-  `KitchenMode` picks this up unchanged (it imports `IngredientsTable`).
+  The "keep ~20 g back for the salt" note shows only when that mix's added water covers it
+  (a milk and egg mix can have 0 g, decision 5); the batch-level check row goes, one per mix
+  replaces it; `result.mixes` can be empty (no flour at all), so render a placeholder line
+  rather than nothing. `KitchenMode` picks this up unchanged (it imports `IngredientsTable`).
 - `DivisionCard.tsx`: `Pieces` **keeps its name and props** and groups by dough with a
-  heading per group; each piece shows `count × pieceEach` and, when `additionsEach > 0`,
+  heading per group, grouping by `allocation[].doughId` (in a no-flour plan a line's dough
+  may have no `DoughResult`); each piece shows `count × pieceEach` and, when `additionsEach > 0`,
   "506 g dough + 94 g add-ins" (tick box on) or "600 g dough + 112 g add-ins = 712 g" (off);
   the card's sub line says which convention is in force. `key = l.key`. The "used of
-  usable" line compares dough grams (`doughEach × count`, per dough) with that dough's
-  `usable`, never piece grams with mix totals (`DivisionCard.tsx:54,60` today).
+  usable" line compares `Σ count × pieceEach` per dough with that dough's `usable` (equal
+  except for lean's starter-mode spare and a clamped separate dough), never piece grams with
+  mix totals (`DivisionCard.tsx:54,60` today).
 - `NotesCard.tsx` (new): a textarea bound to `plan.notes`, printed as a card, heading
   "Notes". Rendered by WP-H.
 - `Warnings` unchanged.
@@ -827,10 +873,14 @@ step, and lanes labelled with their dough; kitchen mode and print mirror it.
 
 - `TimelineCard.tsx`: render `timeline.steps`, then a block per `tracks` entry (heading
   with icon, name and method badge; its steps via `StepRow`, its folds line, its guide line
-  with the dough factor when it is not 1, "×1.15 for the sugar, a heuristic"), then lanes with the dough name
-  and key; durations editable per step id as now. Delete the reads of `timeline.folds` and
-  `timeline.bulk` and, with them, the deprecated aliases in `timeline.ts` (decision 22:
-  report both symbols).
+  with the dough factor when it is not 1, "×1.15 for the sugar, a heuristic"), then lanes
+  headed by `lane.label`; durations editable per step id as now. Folds and the guide line hang
+  off each track's bulk step (`bulk` or `bulk@<id>`), the stand-mixer sentence sits under every
+  track's bulk, and the duration input's aria-label includes the step id so it stays unique
+  across tracks. A plan with no base mix (§4) has no `mix` step and no base track: render what
+  is there. Delete the reads of `timeline.folds` and `timeline.bulk` and, with them, the
+  deprecated aliases in `timeline.ts` and the alias test block in `timeline.test.ts`
+  (decision 22: report each symbol).
 - `FeedHelper` gets `undefined` in items mode (`TimelineCard.tsx:183`, no `result` in the
   card): add an optional `starterTotal?: number` prop to `TimelineCard`, pass it to the
   helper; WP-H wires `result.starter`.
@@ -859,25 +909,28 @@ Size **L**. Depends: WP-D. Owns the stylesheet choke point: runs with no other C
 says what the maths is now.
 
 - `App.tsx`: `doughs` state from `initial.doughs`, `usePersisted(KEYS.doughs, doughs)`;
-  `computePlan(plan, presets, doughs)`, `buildTimeline(plan, presets, bulkTable, doughs)`;
+  `computePlan(plan, presets, doughs)`, `buildTimeline(plan, presets, bulkTable, doughs, result)`;
   pass `doughs` to `ItemsCard`, `doughs`/`onDoughs` to `PresetsPage`, `result.starter` to
   `TimelineCard` as `starterTotal`; render `NotesCard`
   after `DivisionCard`; export includes doughs; import replaces doughs (confirm text updated).
-- Make every decision-21 default required: `computePlan`/`buildTimeline` `doughs`
-  parameter, `ItemsCard.doughs`, `PresetsPage.doughs`/`onDoughs`, `exportBundle.doughs`.
-  Delete the defaults and report each.
-- `SettingsCard.tsx`: hydration hint becomes "Main dough, true hydration. Variants live on
-  the Presets page." `SavedPlans.tsx`: the summary line adds "· 2 doughs" when more than
+- Make every decision-21 default required: `computePlan`'s `doughs`, `buildTimeline`'s
+  `doughs` and `result`, `ItemsCard.doughs`, `PresetsPage.doughs`/`onDoughs`,
+  `exportBundle`'s input (`Omit<ExportBundle, "app" | "version" | "exportedAt" | "doughs"> &
+{ doughs: Dough[] }`; `ExportBundle.doughs?` itself stays optional for version-1 files, and
+  `parseBundle` keeps its "version 2 without doughs" path). Delete the defaults and report each.
+- `SettingsCard.tsx`: the hydration and salt hints say these are the main dough's; variants
+  set their own on the Presets page. `SavedPlans.tsx`: the summary line adds "· 2 doughs" when more than
   one dough is in use.
 - `README.md`: "Modes" mentions doughs; "The maths" gains §4 in prose with worked example A;
   new "Doughs and variations" section (split vs separate, what counts as water, the add-ins
-  tick box, tangzhong, the bulk heuristic); "Persistence" lists doughs and bundle v2.
+  tick box, tangzhong, the bulk heuristic); "Persistence" lists `sourdough.v1.doughs`,
+  `sourdough.v1.seeded` (what it is for) and bundle v2.
   Point to `docs/dough-variations-research.md`.
 - End-to-end: build, run the print check with the example A, A2, B and B3 plans, and leave
   `npm run dev` running on :5173 for Ben to look at before anything is pushed (§12).
 
-**Acceptance:** `grep -rn "= \[\]\|?: Dough\[\]" src/` shows no decision-21 defaults
-left; a fresh browser seeds five doughs and eight presets; a `187a90a` export imports; the
+**Acceptance:** `grep -rn "Dough\[\] = \[\]\|doughs?: Dough\[\]\|BatchResult = computePlan" src/`
+shows only `ExportBundle.doughs?` in `storage.ts`; a fresh browser seeds five doughs and eight presets; a `187a90a` export imports; the
 full gate (§12) passes; the PDFs are attached to the hand-back.
 
 Owns: `src/App.tsx`, `src/components/SettingsCard.tsx`, `src/components/SavedPlans.tsx`,
@@ -927,6 +980,9 @@ props (stated in WP-F). Standing rules beneath the table:
 - Accepted transient: between wave 2 and wave 3 the Timeline card and kitchen mode show only
   the common prefix, because `bulk`/`divide`/`bench` move into `tracks[0]` (WP-D) before
   anything renders tracks (WP-G). Wave-3 agents do not patch around it.
+- Accepted transient: until WP-H wires `doughs`, `App.tsx` passes no library, so an item on
+  one of WP-B's bun presets computes as lean with an `unknown-dough` warning. Lean plans are
+  unaffected; nobody shows Ben buns before WP-H.
 
 Rough total: four waves, eight packages.
 
@@ -1022,3 +1078,19 @@ There is no ORCHESTRATION.md; this section is the gate until one exists.
 - Commit messages follow the repo's `type(scope): summary` style; one commit per package.
 
 Commit this plan to the repo root before wave 1 starts.
+
+---
+
+## 13. Follow-ups outside this plan
+
+Raised during execution, deliberately not folded in:
+
+1. **Saved plans snapshot their doughs.** A saved plan references doughs by id, so editing a
+   dough later rewrites what an old saved plan says was baked (WP-B). Recommended as its own
+   plan: snapshot the doughs a plan uses at save time.
+2. **`AdditionLine` carries structure, not labels.** The timeline pairs a soaker with its seed
+   and picks the tangzhong liquid word from calc's label text (WP-D). A `liquid` and a
+   `pairedWith` field on `AdditionLine` would remove that coupling; it touches `types.ts`,
+   `calc.ts` and `timeline.ts` together.
+3. **One-time upgrade notice** when an unedited roll is refreshed to 100 g (WP-B). Declined
+   for now: decision 14's intent, and Ben edits his own presets.
