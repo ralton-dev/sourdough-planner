@@ -1,4 +1,4 @@
-import { useId, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   ENRICHMENTS,
   INCLUSIONS,
@@ -46,9 +46,24 @@ interface Props {
   onChange: (next: Dough[]) => void;
 }
 
+/** Percentages as the plan's cards print them (decision 35): a thin space before the sign. */
+const PCT = "\u2009%";
+
 /** Decision 9, where the hydration and salt fields are greyed out. */
 const SPLIT_INHERITS =
   "Split doughs inherit the main dough's hydration and salt: you cannot change either after mixing. Choose Mix separately to give this dough its own, or a tangzhong.";
+
+/** A separate mix's own hydration (decision 5): what counts towards it. */
+const OWN_HYDRATION =
+  "True hydration: the water in the starter, milk, egg, butter and honey counts towards it. Blank uses the main dough's.";
+
+/** Decision 11, under a split dough's split point. */
+const SPLIT_AT_HINT =
+  "Fold 1 is 30 min into bulk and fold 2 is 60, whatever the fold count. Everything in this dough goes in at the split, except add-ins that go in at shaping.";
+
+/** Decision 3, for a split dough with no enrichments yet: what a split can carry. */
+const SPLIT_ENRICHMENTS =
+  "Butter and oil go in at the split; egg, egg yolk and milk need a mix of their own.";
 
 /** Decision 20: the tangzhong's hint. */
 const TANGZHONG_HINT =
@@ -102,16 +117,13 @@ const ENRICHMENT_KINDS = Object.keys(ENRICHMENTS) as EnrichmentKind[];
 const INCLUSION_KINDS = Object.keys(INCLUSIONS) as InclusionKind[];
 const SWEETENER_LIST: SweetenerInfo[] = Object.values(SWEETENERS);
 
-/** A row's hint and its Remove button stay side by side; `.row` alone wraps the button under. */
-const HINT_ROW: CSSProperties = { flexWrap: "nowrap" };
-
-/** A fraction of flour as the hints write it: "8 %", "0.02 g per 100 g". */
-function pctText(frac: number, unit = " %"): string {
-  return `${Number((frac * 100).toFixed(2))}${unit}`;
+/** A fraction of flour as the editor writes it: "8 %", "0.02 g per 100 g"; junk reads as 0. */
+function pctText(frac: number, unit = PCT): string {
+  return `${Number((positive(frac) * 100).toFixed(2))}${unit}`;
 }
 
 /** "Typical: 5–20 %." from a table's range. */
-function typical(range: Range, unit = " %"): string {
+function typical(range: Range, unit = PCT): string {
   return `Typical: ${fmtPctRange(range, unit)}.`;
 }
 
@@ -134,9 +146,44 @@ export function doughTitle(d: Pick<Dough, "icon" | "name">): string {
   return d.icon ? `${d.icon} ${d.name}` : d.name;
 }
 
+/**
+ * Decision 26 on the Presets page: a library dough's colour, for its `dough-N` class, by its place
+ * in the library (1 to 5, wrapping after five). The main dough, or an id the library does not
+ * hold, is 0 (neutral). The plan's cards count only the doughs a plan uses, so the two can differ.
+ */
+export function libraryColour(id: string | undefined, library: Dough[]): number {
+  const i = id && id !== LEAN_DOUGH_ID ? library.findIndex((d) => d.id === id) : -1;
+  return i < 0 ? 0 : (i % 5) + 1;
+}
+
 const enrichmentLabel = (kind: EnrichmentKind) => ENRICHMENTS[kind]?.label ?? kind;
 const sweetenerLabel = (kind: SweetKind) => SWEETENERS[kind]?.label ?? kind;
 const inclusionLabel = (kind: InclusionKind) => INCLUSIONS[kind]?.label ?? kind;
+
+/** Mid-sentence case: "Mature cheddar" → "mature cheddar", but "BBQ onions" stays. */
+function lowerFirst(s: string): string {
+  const [first = "", second = ""] = s;
+  return second && second === second.toLowerCase() ? first.toLowerCase() + s.slice(1) : s;
+}
+
+/** An add-in as a summary names it: "Jalapeño, fresh, diced" → "jalapeño", else its kind. */
+function addInName(x: Inclusion): string {
+  const name = (x.name ?? "")
+    .replace(/\s*\([^)]*\)/g, "")
+    .split(",")[0]
+    ?.trim();
+  return lowerFirst(name || inclusionLabel(x.kind));
+}
+
+/** A note's first line, cut at a word near `max` characters, with "…" when there is more. */
+function firstWords(text: string, max = 60): string {
+  const all = text.trim();
+  const line = all.split("\n")[0]?.trim() ?? "";
+  if (line.length <= max) return line.length < all.length ? `${line} …` : line;
+  const cut = line.slice(0, max);
+  const space = line[max] === " " ? max : cut.lastIndexOf(" ");
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.–—-]+$/, "")}…`;
+}
 
 /**
  * The live "Will be" line: the method the dough will get and why, in the words the plan prints
@@ -195,7 +242,12 @@ function methodLine(d: Dough): { text: string; warn: boolean } {
   return { text: `Will be: split off at ${at} — ${into}.`, warn: false };
 }
 
-/** The collapsed line: where it splits or its own hydration, then what is in it. */
+/** A sweetness's amount: "6 %", or "0.03 g per 100 g" for a high-intensity sweetener. */
+function sweetAmount(sw: Sweetness): string {
+  return SWEETENERS[sw.kind]?.perHundredGrams ? pctText(sw.pct, " g per 100 g") : pctText(sw.pct);
+}
+
+/** The list entry's line while closed: where it splits or its own hydration, then what is in it. */
 function summary(d: Dough): string {
   const parts: string[] = [];
   if (effectiveMethod(d) === "split") parts.push(`at ${SPLIT_AT_TEXT[splitAtFor(d)] ?? "fold 1"}`);
@@ -205,15 +257,11 @@ function summary(d: Dough): string {
     parts.push(`${enrichmentLabel(e.kind).toLowerCase()} ${pctText(e.pct)}`);
   }
   const sw = d.sweetness;
-  if (sw && positive(sw.pct) > 0) {
-    const amount = SWEETENERS[sw.kind]?.perHundredGrams
-      ? pctText(sw.pct, " g per 100 g")
-      : pctText(sw.pct);
-    parts.push(`${sweetenerLabel(sw.kind).toLowerCase()} ${amount}`);
-  }
+  if (sw && positive(sw.pct) > 0)
+    parts.push(`${sweetenerLabel(sw.kind).toLowerCase()} ${sweetAmount(sw)}`);
   for (const x of d.inclusions) {
     if (positive(x.pct) === 0) continue;
-    parts.push(`${x.name?.trim() || inclusionLabel(x.kind)} ${pctText(x.pct)}`);
+    parts.push(`${addInName(x)} ${pctText(x.pct)}`);
   }
   if (d.tangzhong && positive(d.tangzhong.flourPct) > 0) {
     parts.push(`tangzhong ${pctText(d.tangzhong.flourPct)}`);
@@ -221,6 +269,71 @@ function summary(d: Dough): string {
   const factor = bulkFactorFor(d);
   if (factor !== 1) parts.push(`bulk ×${factor.toFixed(2)}`);
   return parts.join(" · ");
+}
+
+/*
+ * The form's sections, each summarised in a line while closed (after its title): what the baker
+ * would find inside, from the dough's values.
+ */
+
+function basicsSummary(d: Dough, warn: boolean): string {
+  if (effectiveMethod(d) === "split") {
+    const at = `split off at ${SPLIT_AT_TEXT[splitAtFor(d)] ?? "fold 1"}`;
+    return warn ? `${at}, as set; the plan will warn` : at;
+  }
+  if (d.hydration === undefined && d.salt === undefined) {
+    return "mixed separately, the main dough's hydration and salt";
+  }
+  const h =
+    d.hydration !== undefined ? `${pctText(d.hydration)} hydration` : "the main dough's hydration";
+  const s = d.salt !== undefined ? `${pctText(d.salt)} salt` : "the main dough's salt";
+  return `mixed separately, ${h}, ${s}`;
+}
+
+function enrichmentsSummary(d: Dough): string {
+  const parts = d.enrichments.map(
+    (e) => `${enrichmentLabel(e.kind).toLowerCase()} ${pctText(e.pct)}`,
+  );
+  return parts.length > 0 ? parts.join(", ") : "none";
+}
+
+function sweetnessSummary(d: Dough): string {
+  const sw = d.sweetness;
+  return sw
+    ? `${sweetenerLabel(sw.kind).toLowerCase()} ${sweetAmount(sw)}`
+    : NO_SUGAR.label.toLowerCase();
+}
+
+function inclusionsSummary(d: Dough): string {
+  const parts = d.inclusions.map((x) => `${addInName(x)} ${pctText(x.pct)}`);
+  return parts.length > 0 ? parts.join(", ") : "none";
+}
+
+function tangzhongSummary(d: Dough): string {
+  const tz = d.tangzhong;
+  return tz
+    ? `${pctText(tz.flourPct)} of the flour at 1:${Number(positive(tz.ratio).toFixed(2))}`
+    : "none";
+}
+
+function bakeSummary(d: Dough): string {
+  const b = d.bake;
+  const guide = defaultBulkFactor(d);
+  const parts = [
+    ...(d.bulkFactor !== undefined
+      ? [`bulk ×${bulkFactorFor(d).toFixed(2)}`]
+      : guide !== 1
+        ? [`bulk ×${guide.toFixed(2)} by the guide`]
+        : []),
+    ...(b?.tempC !== undefined ? [`${b.tempC} °C`] : []),
+    ...(b?.steam !== undefined ? [b.steam ? "steam" : "no steam"] : []),
+    ...(b?.wash?.trim() ? [`wash: ${lowerFirst(b.wash.trim())}`] : []),
+  ];
+  return parts.length > 0 ? parts.join(", ") : "as the preset";
+}
+
+function notesSummary(d: Dough): string {
+  return d.notes?.trim() ? firstWords(d.notes) : "none";
 }
 
 /**
@@ -266,7 +379,7 @@ export function DoughsCard({ doughs, presets, onChange }: Props) {
   };
 
   return (
-    <section className="card">
+    <section className="card doughs-card">
       <header>
         <h2>Doughs</h2>
         <div className="row">
@@ -278,73 +391,144 @@ export function DoughsCard({ doughs, presets, onChange }: Props) {
           </button>
         </div>
       </header>
-      <p className="muted small" style={{ marginBottom: 10 }}>
-        Variations on the main dough, which is the Batch settings on the Plan page. Pick one for an
-        item on the Plan page, or make it a preset's default above.
-      </p>
       <div className="stack">
+        <p className="note-planner">
+          Variations on the main dough, which is the Batch settings on the Plan page. Pick one for
+          an item on the Plan page, or make it a preset's default above.
+        </p>
         {list.length === 0 && (
-          <p className="muted">No doughs. Add one, or reset to the defaults.</p>
+          <p className="note-planner">No doughs. Add one, or reset to the defaults.</p>
         )}
-        {list.map((d, i) => (
-          <div className="preset-card" key={d.id}>
-            <header>
-              <button
-                type="button"
-                className="btn ghost"
-                style={{ flex: 1, textAlign: "left", whiteSpace: "normal" }}
-                onClick={() => setOpen(open === d.id ? null : d.id)}
-                aria-expanded={open === d.id}
-              >
-                <strong>{doughTitle(d)}</strong>{" "}
-                <span className="badge neutral">
-                  {effectiveMethod(d) === "split" ? "split" : "separate mix"}
-                </span>{" "}
-                <span className="muted small">{summary(d)}</span>
-              </button>
-              <div className="actions">
+        {list.map((d, i) => {
+          const isOpen = open === d.id;
+          return (
+            <div className={`preset-card dough-${libraryColour(d.id, list)}`} key={d.id}>
+              <header>
                 <button
                   type="button"
-                  className="btn icon"
-                  aria-label={`Move ${d.name} up`}
-                  disabled={i === 0}
-                  onClick={() => move(i, -1)}
+                  className="btn ghost entry-open"
+                  onClick={() => setOpen(isOpen ? null : d.id)}
+                  aria-expanded={isOpen}
                 >
-                  ↑
+                  <strong className="dough-tag">{doughTitle(d)}</strong>{" "}
+                  <span className="badge neutral">
+                    {effectiveMethod(d) === "split" ? "split" : "separate mix"}
+                  </span>
+                  {!isOpen && (
+                    <>
+                      {" "}
+                      <span className="note-planner">{summary(d)}</span>
+                    </>
+                  )}
                 </button>
-                <button
-                  type="button"
-                  className="btn icon"
-                  aria-label={`Move ${d.name} down`}
-                  disabled={i === list.length - 1}
-                  onClick={() => move(i, 1)}
-                >
-                  ↓
-                </button>
-                <button
-                  type="button"
-                  className="btn icon danger"
-                  aria-label={`Delete ${d.name}`}
-                  onClick={() => remove(d)}
-                >
-                  ×
-                </button>
-              </div>
-            </header>
-            {open === d.id && <DoughForm dough={d} presets={presets} onChange={update} />}
-          </div>
-        ))}
+                <div className="actions">
+                  <button
+                    type="button"
+                    className="btn icon"
+                    aria-label={`Move ${d.name} up`}
+                    disabled={i === 0}
+                    onClick={() => move(i, -1)}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    className="btn icon"
+                    aria-label={`Move ${d.name} down`}
+                    disabled={i === list.length - 1}
+                    onClick={() => move(i, 1)}
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    className="btn icon danger"
+                    aria-label={`Delete ${d.name}`}
+                    onClick={() => remove(d)}
+                  >
+                    ×
+                  </button>
+                </div>
+              </header>
+              {isOpen && <DoughForm dough={d} presets={presets} onChange={update} />}
+            </div>
+          );
+        })}
       </div>
     </section>
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+/**
+ * A part of the dough form under a heading that opens and closes it; closed, the heading carries
+ * the part's summary, so a dough opens on Basics and one line per other part. Whether a part is
+ * open is the form's own state, never stored: it starts closed (Basics open) and resets when the
+ * dough is closed.
+ */
+function Section({
+  title,
+  summary,
+  initiallyOpen = false,
+  children,
+}: {
+  title: string;
+  summary: string;
+  initiallyOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(initiallyOpen);
+  const id = useId();
   return (
-    <div className="stack dough-section">
-      <h3>{title}</h3>
-      {children}
+    <div className="part">
+      <h3>
+        <button
+          type="button"
+          className="part-toggle"
+          aria-expanded={open}
+          aria-controls={open ? id : undefined}
+          onClick={() => setOpen(!open)}
+        >
+          <span>
+            <span className="part-title">{open ? title : `${title}:`}</span>
+            {!open && <span className="part-summary"> {summary}</span>}
+          </span>
+        </button>
+      </h3>
+      {open && (
+        <div className="part-body" id={id}>
+          {children}
+        </div>
+      )}
     </div>
+  );
+}
+
+/** Grows the box to its text where the browser cannot (no `field-sizing: content`). */
+function fitToText(el: HTMLTextAreaElement | null) {
+  if (!el || CSS.supports?.("field-sizing", "content")) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`;
+}
+
+/** The dough's notes (decision 18): the Notes card's box, growing with what is written. */
+function NotesBox({ value, onChange }: { value: string; onChange: (text: string) => void }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => fitToText(ref.current), [value]);
+  useEffect(() => {
+    const refit = () => fitToText(ref.current);
+    window.addEventListener("resize", refit);
+    return () => window.removeEventListener("resize", refit);
+  }, []);
+  return (
+    <textarea
+      ref={ref}
+      className="notes-input"
+      rows={3}
+      aria-label="Notes"
+      placeholder="What you did and how it went"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
   );
 }
 
@@ -378,93 +562,50 @@ function DoughForm({
   const tz = d.tangzhong;
 
   return (
-    <div className="stack" style={{ marginTop: 10 }}>
-      <div className="fields">
-        <div className="field">
-          <label htmlFor={`${id}-name`}>Name</label>
-          <input
-            id={`${id}-name`}
-            type="text"
-            value={d.name}
-            onChange={(e) => set({ name: e.target.value })}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor={`${id}-icon`}>Icon</label>
-          <input
-            id={`${id}-icon`}
-            type="text"
-            value={d.icon ?? ""}
-            maxLength={4}
-            onChange={(e) => set({ icon: e.target.value || undefined })}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor={`${id}-method`}>Method</label>
-          <select
-            id={`${id}-method`}
-            value={d.method}
-            onChange={(e) => set({ method: e.target.value as DoughMethod })}
-          >
-            {(Object.keys(METHOD_LABEL) as DoughMethod[]).map((m) => (
-              <option key={m} value={m}>
-                {METHOD_LABEL[m]}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-      <p className={line.warn ? "callout warn" : "small"} role="status">
-        {line.text}
-      </p>
-      {users.length > 0 && <p className="muted small">The default dough of {joinAnd(users)}.</p>}
-
-      <fieldset disabled={split} aria-label="Hydration and salt" className="fieldset-reset">
-        <div className="fields">
-          <NumberField
-            label="Hydration"
-            value={d.hydration}
-            onChange={(v) => set({ hydration: v })}
-            scale={100}
-            unit="%"
-            min={40}
-            max={110}
-            allowEmpty
-            placeholder="main"
-          />
-          <NumberField
-            label="Salt"
-            value={d.salt}
-            onChange={(v) => set({ salt: v })}
-            scale={100}
-            unit="%"
-            min={0}
-            max={5}
-            allowEmpty
-            placeholder="main"
-          />
-        </div>
-      </fieldset>
-      <p className="muted small">
-        {split
-          ? SPLIT_INHERITS
-          : "True hydration: the water in the starter, milk, egg, butter and honey counts towards it. Blank uses the main dough's."}
-      </p>
-      {split && (d.hydration !== undefined || d.salt !== undefined) && (
-        <div className="row">
-          <button
-            type="button"
-            className="btn ghost small"
-            onClick={() => set({ hydration: undefined, salt: undefined })}
-          >
-            Clear its own hydration and salt
-          </button>
-        </div>
-      )}
-      {split && (
-        <>
-          <div className="fields">
-            <div className="field">
+    <div className="entry-form dough-form">
+      <Section title="Basics" summary={basicsSummary(d, line.warn)} initiallyOpen>
+        <div className="basics">
+          <div className="field f-name">
+            <label htmlFor={`${id}-name`}>Name</label>
+            <div className="tagwrap">
+              <span className="dough-tag" aria-hidden="true" />
+              <input
+                id={`${id}-name`}
+                type="text"
+                value={d.name}
+                onChange={(e) => set({ name: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="field f-icon">
+            <label htmlFor={`${id}-icon`}>Icon</label>
+            <input
+              id={`${id}-icon`}
+              type="text"
+              value={d.icon ?? ""}
+              maxLength={4}
+              onChange={(e) => set({ icon: e.target.value || undefined })}
+            />
+          </div>
+          <div className="field f-method">
+            <label htmlFor={`${id}-method`}>Method</label>
+            <select
+              id={`${id}-method`}
+              value={d.method}
+              onChange={(e) => set({ method: e.target.value as DoughMethod })}
+            >
+              {(Object.keys(METHOD_LABEL) as DoughMethod[]).map((m) => (
+                <option key={m} value={m}>
+                  {METHOD_LABEL[m]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className={line.warn ? "callout warn" : "callout info"} role="status">
+            {line.text}
+          </p>
+          {split && (
+            <div className="field f-split">
               <label htmlFor={`${id}-split`}>Split off at</label>
               <select
                 id={`${id}-split`}
@@ -478,78 +619,128 @@ function DoughForm({
                 ))}
               </select>
             </div>
+          )}
+          <fieldset
+            disabled={split}
+            aria-label="Hydration and salt"
+            className="fieldset-reset f-hs"
+          >
+            <div className="pair">
+              <NumberField
+                label="Hydration"
+                value={d.hydration}
+                onChange={(v) => set({ hydration: v })}
+                scale={100}
+                unit="%"
+                min={40}
+                max={110}
+                allowEmpty
+                placeholder="main"
+              />
+              <NumberField
+                label="Salt"
+                value={d.salt}
+                onChange={(v) => set({ salt: v })}
+                scale={100}
+                unit="%"
+                min={0}
+                max={5}
+                allowEmpty
+                placeholder="main"
+              />
+            </div>
+          </fieldset>
+        </div>
+        {split ? (
+          <>
+            <p className="note-planner">{SPLIT_AT_HINT}</p>
+            <p className="note-planner">{SPLIT_INHERITS}</p>
+          </>
+        ) : (
+          <p className="note-planner">{OWN_HYDRATION}</p>
+        )}
+        {split && (d.hydration !== undefined || d.salt !== undefined) && (
+          <button
+            type="button"
+            className="btn ghost small"
+            onClick={() => set({ hydration: undefined, salt: undefined })}
+          >
+            Clear its own hydration and salt
+          </button>
+        )}
+        {users.length > 0 && <p className="note-planner">The default dough of {joinAnd(users)}.</p>}
+      </Section>
+
+      <Section title="Enrichments" summary={enrichmentsSummary(d)}>
+        {d.enrichments.length > 0 && (
+          <div className="fieldrows enr">
+            {d.enrichments.map((e, i) => (
+              <EnrichmentRow
+                key={i}
+                enrichment={e}
+                split={split}
+                taken={kinds.filter((_, k) => k !== i)}
+                onChange={(next) => setEnrichment(i, next)}
+                onRemove={() => set({ enrichments: d.enrichments.filter((_, k) => k !== i) })}
+              />
+            ))}
           </div>
-          <p className="muted small">
-            Fold 1 is 30 min into bulk and fold 2 is 60, whatever the fold count. Everything in this
-            dough goes in at the split, except add-ins that go in at shaping.
-          </p>
-        </>
-      )}
-
-      <Section title="Enrichments">
-        {d.enrichments.length === 0 && (
-          <p className="muted small">None. Butter and oil split off; egg, yolk and milk mix.</p>
         )}
-        {d.enrichments.map((e, i) => (
-          <EnrichmentRow
-            key={i}
-            enrichment={e}
-            split={split}
-            taken={kinds.filter((_, k) => k !== i)}
-            onChange={(next) => setEnrichment(i, next)}
-            onRemove={() => set({ enrichments: d.enrichments.filter((_, k) => k !== i) })}
-          />
-        ))}
-        <div className="row">
-          <button
-            type="button"
-            className="btn"
-            disabled={!nextKind}
-            onClick={() => {
-              if (!nextKind) return;
-              const start = ENRICHMENTS[nextKind].typical[0];
-              set({ enrichments: [...d.enrichments, { kind: nextKind, pct: start }] });
-            }}
-          >
-            Add an enrichment
-          </button>
-        </div>
+        {d.enrichments.length === 0 && split && <p className="note-planner">{SPLIT_ENRICHMENTS}</p>}
+        <button
+          type="button"
+          className="btn"
+          disabled={!nextKind}
+          onClick={() => {
+            if (!nextKind) return;
+            const start = ENRICHMENTS[nextKind].typical[0];
+            set({ enrichments: [...d.enrichments, { kind: nextKind, pct: start }] });
+          }}
+        >
+          Add an enrichment
+        </button>
       </Section>
 
-      <Section title="Sweetness">
-        <SweetnessFields sweetness={d.sweetness} onChange={(sweetness) => set({ sweetness })} />
+      <Section title="Sweetness" summary={sweetnessSummary(d)}>
+        <SweetnessFields
+          sweetness={d.sweetness}
+          separate={!split}
+          onChange={(sweetness) => set({ sweetness })}
+        />
       </Section>
 
-      <Section title="Add-ins">
+      <Section title="Add-ins" summary={inclusionsSummary(d)}>
+        {d.inclusions.length > 0 && (
+          <div className="fieldrows inc">
+            {d.inclusions.map((x, i) => (
+              <InclusionRow
+                key={i}
+                inclusion={x}
+                split={split}
+                onChange={(next) => setInclusion(i, next)}
+                onRemove={() => set({ inclusions: d.inclusions.filter((_, k) => k !== i) })}
+              />
+            ))}
+          </div>
+        )}
         {d.inclusions.length === 0 && (
-          <p className="muted small">None. Cheese, chilli, olives, seeds, nuts, fruit…</p>
+          <p className="note-planner">Cheese, chilli, olives, seeds, nuts, fruit…</p>
         )}
-        {d.inclusions.map((x, i) => (
-          <InclusionRow
-            key={i}
-            inclusion={x}
-            split={split}
-            onChange={(next) => setInclusion(i, next)}
-            onRemove={() => set({ inclusions: d.inclusions.filter((_, k) => k !== i) })}
-          />
-        ))}
-        <div className="row">
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              const kind = INCLUSION_KINDS[0] ?? "other";
-              const start = INCLUSIONS[kind]?.typical ?? 0.1;
-              set({ inclusions: [...d.inclusions, { kind, name: "", pct: start }] });
-            }}
-          >
-            Add an add-in
-          </button>
-        </div>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => {
+            const kind = INCLUSION_KINDS[0] ?? "other";
+            const start = INCLUSIONS[kind]?.typical ?? 0.1;
+            set({ inclusions: [...d.inclusions, { kind, name: "", pct: start }] });
+          }}
+        >
+          Add an add-in
+        </button>
       </Section>
 
       {(!split || tz) && (
-        <Section title="Tangzhong">
+        <Section title="Tangzhong" summary={tangzhongSummary(d)}>
           <label className="check">
             <input
               type="checkbox"
@@ -561,54 +752,62 @@ function DoughForm({
             <span>Cook part of the flour first</span>
           </label>
           {tz && (
-            <div className="fields">
-              <NumberField
-                label="Flour"
-                value={tz.flourPct}
-                onChange={(v) => set({ tangzhong: { ...tz, flourPct: v ?? tz.flourPct } })}
-                scale={100}
-                unit="%"
-                min={0}
-                max={20}
-              />
-              <NumberField
-                label="Liquid to flour"
-                value={tz.ratio}
-                onChange={(v) => set({ tangzhong: { ...tz, ratio: v ?? tz.ratio } })}
-                unit=": 1"
-                min={1}
-                max={10}
-              />
+            <div className="flow">
+              <div className="w-num">
+                <NumberField
+                  label="Flour"
+                  value={tz.flourPct}
+                  onChange={(v) => set({ tangzhong: { ...tz, flourPct: v ?? tz.flourPct } })}
+                  scale={100}
+                  unit="%"
+                  min={0}
+                  max={20}
+                />
+              </div>
+              <div className="w-num">
+                <NumberField
+                  label="Liquid to flour"
+                  value={tz.ratio}
+                  onChange={(v) => set({ tangzhong: { ...tz, ratio: v ?? tz.ratio } })}
+                  unit=": 1"
+                  min={1}
+                  max={10}
+                />
+              </div>
             </div>
           )}
-          <p className="muted small">{TANGZHONG_HINT}</p>
+          <p className="note-planner">{TANGZHONG_HINT}</p>
         </Section>
       )}
 
-      <Section title="Bulk and bake">
-        <div className="fields">
-          <NumberField
-            label="Bulk factor"
-            value={d.bulkFactor}
-            onChange={(v) => set({ bulkFactor: v })}
-            unit="×"
-            min={0.5}
-            max={3}
-            allowEmpty
-            placeholder={guide.toFixed(2)}
-          />
-          <NumberField
-            label="Bake temperature"
-            value={d.bake?.tempC}
-            onChange={(v) => setBake({ tempC: v })}
-            unit="°C"
-            min={100}
-            max={500}
-            integer
-            allowEmpty
-            placeholder="preset's"
-          />
-          <div className="field">
+      <Section title="Bulk and bake" summary={bakeSummary(d)}>
+        <div className="flow">
+          <div className="w-num">
+            <NumberField
+              label="Bulk factor"
+              value={d.bulkFactor}
+              onChange={(v) => set({ bulkFactor: v })}
+              unit="×"
+              min={0.5}
+              max={3}
+              allowEmpty
+              placeholder={guide.toFixed(2)}
+            />
+          </div>
+          <div className="w-num">
+            <NumberField
+              label="Bake temperature"
+              value={d.bake?.tempC}
+              onChange={(v) => setBake({ tempC: v })}
+              unit="°C"
+              min={100}
+              max={500}
+              integer
+              allowEmpty
+              placeholder="preset's"
+            />
+          </div>
+          <div className="field w-fit">
             <label htmlFor={`${id}-steam`}>Steam</label>
             <select
               id={`${id}-steam`}
@@ -622,7 +821,7 @@ function DoughForm({
               <option value="off">No steam</option>
             </select>
           </div>
-          <div className="field">
+          <div className="field w-text">
             <label htmlFor={`${id}-wash`}>Wash</label>
             <input
               id={`${id}-wash`}
@@ -633,22 +832,15 @@ function DoughForm({
             />
           </div>
         </div>
-        <p className="muted small">
+        <p className="note-planner">
           The bulk factor multiplies this dough's bulk time. Blank uses a guide from its sugar and
           fat, ×{guide.toFixed(2)} here: a heuristic. The temperature, steam and wash win over the
           preset's; the bake times stay the preset's.
         </p>
       </Section>
 
-      <Section title="Notes">
-        <div className="field">
-          <label htmlFor={`${id}-notes`}>What you did and how it went</label>
-          <textarea
-            id={`${id}-notes`}
-            value={d.notes ?? ""}
-            onChange={(e) => set({ notes: e.target.value || undefined })}
-          />
-        </div>
+      <Section title="Notes" summary={notesSummary(d)}>
+        <NotesBox value={d.notes ?? ""} onChange={(text) => set({ notes: text || undefined })} />
       </Section>
     </div>
   );
@@ -671,27 +863,28 @@ function EnrichmentRow({
   const id = useId();
   const info: EnrichmentInfo | undefined = ENRICHMENTS[e.kind];
   const defaultAt = enrichmentAddAt({ kind: e.kind, pct: e.pct });
+  const butter = e.kind === "butter";
   return (
-    <div className="stack dough-row">
-      <div className="fields">
-        <div className="field">
-          <label htmlFor={`${id}-kind`}>Enrichment</label>
-          <select
-            id={`${id}-kind`}
-            value={e.kind}
-            onChange={(ev) => {
-              const kind = ev.target.value as EnrichmentKind;
-              onChange({ kind, pct: ENRICHMENTS[kind].typical[0] });
-            }}
-          >
-            {!info && <option value={e.kind}>{e.kind} (unknown)</option>}
-            {ENRICHMENT_KINDS.filter((k) => k === e.kind || !taken.includes(k)).map((k) => (
-              <option key={k} value={k}>
-                {ENRICHMENTS[k].label}
-              </option>
-            ))}
-          </select>
-        </div>
+    <div className={butter ? "fieldrow" : "fieldrow no-at"}>
+      <div className="field c-kind">
+        <label htmlFor={`${id}-kind`}>Enrichment</label>
+        <select
+          id={`${id}-kind`}
+          value={e.kind}
+          onChange={(ev) => {
+            const kind = ev.target.value as EnrichmentKind;
+            onChange({ kind, pct: ENRICHMENTS[kind].typical[0] });
+          }}
+        >
+          {!info && <option value={e.kind}>{e.kind} (unknown)</option>}
+          {ENRICHMENT_KINDS.filter((k) => k === e.kind || !taken.includes(k)).map((k) => (
+            <option key={k} value={k}>
+              {ENRICHMENTS[k].label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="c-amount">
         <NumberField
           label="Amount"
           value={e.pct}
@@ -701,55 +894,61 @@ function EnrichmentRow({
           min={0}
           max={200}
         />
-        {e.kind === "butter" && split && (
-          // Decision 11: a split dough's butter goes in at the split, so the field is fixed and its
-          // group greys it, as it does hydration and salt. A text field, not a select: Chrome fades
-          // a disabled select again on its own, on screen and in print.
-          <fieldset disabled className="fieldset-reset field">
-            <label htmlFor={`${id}-at`}>Goes in</label>
-            <input id={`${id}-at`} type="text" value="At the split" readOnly />
-          </fieldset>
-        )}
-        {e.kind === "butter" && !split && (
-          <div className="field">
-            <label htmlFor={`${id}-at`}>Goes in</label>
-            <select
-              id={`${id}-at`}
-              value={e.addAt ?? ""}
-              onChange={(ev) =>
-                onChange(
-                  tidy({
-                    ...e,
-                    addAt: (ev.target.value || undefined) as EnrichmentAddAt | undefined,
-                  }),
-                )
-              }
-            >
-              <option value="">{ENRICHMENT_AT[defaultAt]} (default)</option>
-              {(Object.keys(ENRICHMENT_AT) as EnrichmentAddAt[]).map((a) => (
-                <option key={a} value={a}>
-                  {ENRICHMENT_AT[a]}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
       </div>
-      <div className="row between" style={HINT_ROW}>
-        <span className="muted small">{info ? `${typical(info.typical)} ${info.hint}` : ""}</span>
-        <button type="button" className="btn ghost danger" onClick={onRemove}>
-          Remove
-        </button>
-      </div>
+      {butter && split && (
+        // Decision 11: a split dough's butter goes in at the split, so the field is fixed and its
+        // group greys it, as it does hydration and salt. A text field, not a select: Chrome fades
+        // a disabled select again on its own, on screen and in print.
+        <fieldset disabled className="fieldset-reset field c-at">
+          <label htmlFor={`${id}-at`}>Goes in</label>
+          <input id={`${id}-at`} type="text" value="At the split" readOnly />
+        </fieldset>
+      )}
+      {butter && !split && (
+        <div className="field c-at">
+          <label htmlFor={`${id}-at`}>Goes in</label>
+          <select
+            id={`${id}-at`}
+            value={e.addAt ?? ""}
+            onChange={(ev) =>
+              onChange(
+                tidy({
+                  ...e,
+                  addAt: (ev.target.value || undefined) as EnrichmentAddAt | undefined,
+                }),
+              )
+            }
+          >
+            <option value="">{ENRICHMENT_AT[defaultAt]} (default)</option>
+            {(Object.keys(ENRICHMENT_AT) as EnrichmentAddAt[]).map((a) => (
+              <option key={a} value={a}>
+                {ENRICHMENT_AT[a]}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      <p className="note-planner c-hint">{info ? `${typical(info.typical)} ${info.hint}` : ""}</p>
+      <button
+        type="button"
+        className="btn icon ghost danger c-remove"
+        aria-label={`Remove ${enrichmentLabel(e.kind).toLowerCase()}`}
+        onClick={onRemove}
+      >
+        ×
+      </button>
     </div>
   );
 }
 
 function SweetnessFields({
   sweetness: sw,
+  separate,
   onChange,
 }: {
   sweetness?: Sweetness;
+  /** The no-sugar hint is about enriched doughs, which mix separately: a split never gets it. */
+  separate: boolean;
   onChange: (next: Sweetness | undefined) => void;
 }) {
   const id = useId();
@@ -779,27 +978,27 @@ function SweetnessFields({
           </label>
         ))}
       </div>
-      {sw ? (
-        <>
-          <div className="fields">
-            <div className="field">
-              <label htmlFor={`${id}-kind`}>Which {CHOICE_LABEL[choice].toLowerCase()}</label>
-              <select
-                id={`${id}-kind`}
-                value={sw.kind}
-                onChange={(e) => {
-                  const next = SWEETENERS[e.target.value as SweetKind];
-                  if (next) start(next);
-                }}
-              >
-                {!info && <option value={sw.kind}>{sw.kind} (not on the list)</option>}
-                {SWEETENER_LIST.filter((s) => s.choice === choice).map((s) => (
-                  <option key={s.kind} value={s.kind}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+      {sw && (
+        <div className="flow">
+          <div className="field w-fit">
+            <label htmlFor={`${id}-kind`}>Which {CHOICE_LABEL[choice].toLowerCase()}</label>
+            <select
+              id={`${id}-kind`}
+              value={sw.kind}
+              onChange={(e) => {
+                const next = SWEETENERS[e.target.value as SweetKind];
+                if (next) start(next);
+              }}
+            >
+              {!info && <option value={sw.kind}>{sw.kind} (not on the list)</option>}
+              {SWEETENER_LIST.filter((s) => s.choice === choice).map((s) => (
+                <option key={s.kind} value={s.kind}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="w-num">
             <NumberField
               label={perHundred ? "Grams per 100 g flour" : "Amount"}
               value={sw.pct}
@@ -810,16 +1009,15 @@ function SweetnessFields({
               max={perHundred ? 1 : 50}
             />
           </div>
-          {info && (
-            <p className="muted small">
-              {typical(info.typical, perHundred ? " g per 100 g flour" : " %")} {info.hint}
-            </p>
-          )}
-          {choice === "sweetener" && <p className="muted small">{LABEL_CHECK}</p>}
-        </>
-      ) : (
-        <p className="muted small">{NO_SUGAR.hint}</p>
+        </div>
       )}
+      {sw && info && (
+        <p className="note-planner">
+          {typical(info.typical, perHundred ? " g per 100 g flour" : PCT)} {info.hint}
+        </p>
+      )}
+      {sw && choice === "sweetener" && <p className="note-planner">{LABEL_CHECK}</p>}
+      {!sw && separate && <p className="note-planner">{NO_SUGAR.hint}</p>}
     </>
   );
 }
@@ -839,42 +1037,44 @@ function InclusionRow({
   const info: InclusionInfo | undefined = INCLUSIONS[x.kind];
   const setAt = (v: string) =>
     onChange(tidy({ ...x, addAt: (v || undefined) as InclusionAddAt | undefined }));
+  // The kind's note prints when the Note field is empty (its placeholder shows it); once the baker
+  // writes their own, the hint keeps the kind's advice in view.
   const hint = [
     ...(info?.typical !== undefined ? [typical([info.typical, info.typical])] : []),
-    ...(info?.note ? [info.note] : []),
+    ...(info?.note && x.note?.trim() ? [info.note] : []),
   ].join(" ");
   return (
-    <div className="stack dough-row">
-      <div className="fields">
-        <div className="field">
-          <label htmlFor={`${id}-kind`}>Add-in</label>
-          <select
-            id={`${id}-kind`}
-            value={x.kind}
-            onChange={(ev) => {
-              const kind = ev.target.value as InclusionKind;
-              const t = INCLUSIONS[kind]?.typical;
-              onChange({ ...x, kind, pct: t ?? x.pct });
-            }}
-          >
-            {!info && <option value={x.kind}>{x.kind} (unknown)</option>}
-            {INCLUSION_KINDS.map((k) => (
-              <option key={k} value={k}>
-                {INCLUSIONS[k].label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor={`${id}-name`}>Name</label>
-          <input
-            id={`${id}-name`}
-            type="text"
-            value={x.name ?? ""}
-            placeholder={inclusionLabel(x.kind)}
-            onChange={(ev) => onChange({ ...x, name: ev.target.value })}
-          />
-        </div>
+    <div className="fieldrow">
+      <div className="field c-kind">
+        <label htmlFor={`${id}-kind`}>Add-in</label>
+        <select
+          id={`${id}-kind`}
+          value={x.kind}
+          onChange={(ev) => {
+            const kind = ev.target.value as InclusionKind;
+            const t = INCLUSIONS[kind]?.typical;
+            onChange({ ...x, kind, pct: t ?? x.pct });
+          }}
+        >
+          {!info && <option value={x.kind}>{x.kind} (unknown)</option>}
+          {INCLUSION_KINDS.map((k) => (
+            <option key={k} value={k}>
+              {INCLUSIONS[k].label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field c-name">
+        <label htmlFor={`${id}-name`}>Name</label>
+        <input
+          id={`${id}-name`}
+          type="text"
+          value={x.name ?? ""}
+          placeholder={inclusionLabel(x.kind)}
+          onChange={(ev) => onChange({ ...x, name: ev.target.value })}
+        />
+      </div>
+      <div className="c-amount">
         <NumberField
           label="Amount"
           value={x.pct}
@@ -884,29 +1084,31 @@ function InclusionRow({
           min={0}
           max={200}
         />
-        <div className="field">
-          <label htmlFor={`${id}-at`}>Goes in</label>
-          {split ? (
-            // Decision 11: in a split dough everything goes in at the split, except at shaping.
-            <select
-              id={`${id}-at`}
-              value={x.addAt === "shape" ? "shape" : ""}
-              onChange={(ev) => setAt(ev.target.value)}
-            >
-              <option value="">At the split</option>
-              <option value="shape">{INCLUSION_AT.shape}</option>
-            </select>
-          ) : (
-            <select id={`${id}-at`} value={x.addAt ?? ""} onChange={(ev) => setAt(ev.target.value)}>
-              <option value="">{INCLUSION_AT[info?.addAt ?? "fold1"]} (default)</option>
-              {(Object.keys(INCLUSION_AT) as InclusionAddAt[]).map((a) => (
-                <option key={a} value={a}>
-                  {INCLUSION_AT[a]}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
+      </div>
+      <div className="field c-at">
+        <label htmlFor={`${id}-at`}>Goes in</label>
+        {split ? (
+          // Decision 11: in a split dough everything goes in at the split, except at shaping.
+          <select
+            id={`${id}-at`}
+            value={x.addAt === "shape" ? "shape" : ""}
+            onChange={(ev) => setAt(ev.target.value)}
+          >
+            <option value="">At the split</option>
+            <option value="shape">{INCLUSION_AT.shape}</option>
+          </select>
+        ) : (
+          <select id={`${id}-at`} value={x.addAt ?? ""} onChange={(ev) => setAt(ev.target.value)}>
+            <option value="">{INCLUSION_AT[info?.addAt ?? "fold1"]} (default)</option>
+            {(Object.keys(INCLUSION_AT) as InclusionAddAt[]).map((a) => (
+              <option key={a} value={a}>
+                {INCLUSION_AT[a]}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+      <div className="c-soak">
         <NumberField
           label="Soaker water"
           value={x.soakerWaterPct}
@@ -919,7 +1121,7 @@ function InclusionRow({
           placeholder="none"
         />
       </div>
-      <div className="field">
+      <div className="field c-note">
         <label htmlFor={`${id}-note`}>Note</label>
         <input
           id={`${id}-note`}
@@ -929,12 +1131,15 @@ function InclusionRow({
           onChange={(ev) => onChange(tidy({ ...x, note: ev.target.value || undefined }))}
         />
       </div>
-      <div className="row between" style={HINT_ROW}>
-        <span className="muted small">{hint}</span>
-        <button type="button" className="btn ghost danger" onClick={onRemove}>
-          Remove
-        </button>
-      </div>
+      <p className="note-planner c-hint">{hint}</p>
+      <button
+        type="button"
+        className="btn icon ghost danger c-remove"
+        aria-label={`Remove ${addInName(x)}`}
+        onClick={onRemove}
+      >
+        ×
+      </button>
     </div>
   );
 }

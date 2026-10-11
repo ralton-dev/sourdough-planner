@@ -1,1 +1,285 @@
-/* The Doughs editor (DoughsCard.tsx): R6 of PLAN-redesign.md; its print block is R7's. */
+/*
+ * The Doughs editor (DoughsCard.tsx) and the Presets page's lists (PresetsPage.tsx): R6 of
+ * PLAN-redesign.md. Every rule is scoped under .doughs-card or .presets-card; the print block is
+ * R7's. A wide form (800 px of viewport and up: a form at least 708 px across) lays its fields
+ * out in rows; narrower, they stack in the order they are read.
+ */
+
+/*
+ * A library entry, a preset or a dough: its header is the open button (name, then its summary
+ * while closed), then move up, move down and delete. On a phone the name gets the whole width and
+ * the three buttons a row of their own. A dough's colour comes from the entry's dough-N class.
+ */
+:is(.doughs-card, .presets-card) .preset-card > header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+}
+:is(.doughs-card, .presets-card) .entry-open {
+  min-width: 0;
+  padding-inline: var(--sp-2);
+  text-align: left;
+  white-space: normal;
+}
+:is(.doughs-card, .presets-card) .entry-open .note-planner {
+  font-weight: 400;
+}
+/* A dough's name at the size of the rest of the row, wrapping rather than overflowing. */
+:is(.doughs-card, .presets-card) .entry-open .dough-tag {
+  white-space: normal;
+}
+:is(.doughs-card, .presets-card) .entry-open > .dough-tag {
+  font-size: inherit;
+}
+@media (max-width: 559px) {
+  :is(.doughs-card, .presets-card) .preset-card > header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  :is(.doughs-card, .presets-card) .preset-card > header > .actions {
+    justify-self: end;
+  }
+}
+:is(.doughs-card, .presets-card) .entry-form {
+  margin-top: var(--sp-2);
+}
+
+/* A dough's dot inside a field, at its start: the dough's name, a preset's dough. */
+:is(.doughs-card, .presets-card) .tagwrap {
+  position: relative;
+}
+:is(.doughs-card, .presets-card) .tagwrap > .dough-tag {
+  position: absolute;
+  left: var(--sp-3);
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+:is(.doughs-card, .presets-card) .tagwrap > :is(input, select) {
+  padding-left: calc(var(--sp-3) + 1.2em);
+}
+
+/* A preset's dough select: wide enough for a long dough name once the form has two columns. */
+@media (min-width: 560px) {
+  .presets-card .f-dough {
+    grid-column: span 2;
+  }
+}
+
+/*
+ * The dough form's parts: a heading row on a rule that opens and closes the part; closed, the
+ * title carries the part's summary in the planner's voice.
+ */
+.doughs-card .part {
+  border-top: 1px solid var(--line);
+}
+.doughs-card .part > h3 {
+  font-size: var(--fs-md);
+}
+.doughs-card .part-toggle {
+  display: grid;
+  grid-template-columns: 1.2em minmax(0, 1fr);
+  align-content: center;
+  width: 100%;
+  min-height: 44px;
+  padding: var(--sp-2) 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+.doughs-card .part-toggle::before {
+  content: "▸";
+  color: var(--muted);
+}
+.doughs-card .part-toggle[aria-expanded="true"]::before {
+  content: "▾";
+}
+.doughs-card .part-summary {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+}
+.doughs-card .part-body {
+  display: grid;
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-3);
+}
+.doughs-card .part-body > :is(.btn, .check) {
+  justify-self: start;
+}
+
+/*
+ * Basics: name and icon, the method, then "Will be" right under the method, then hydration and
+ * salt (and a split's split point). Wide, the fields share one row and "Will be" spans the next.
+ */
+.doughs-card .basics {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5em;
+  gap: var(--sp-2);
+  align-items: end;
+}
+.doughs-card .basics > :not(.f-name, .f-icon) {
+  grid-column: 1 / -1;
+}
+.doughs-card .pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-2);
+}
+@media (min-width: 800px) {
+  .doughs-card .basics {
+    grid-template-columns: minmax(10em, 1fr) 5em auto 13em;
+  }
+  .doughs-card .basics > :not(.f-name, .f-icon) {
+    grid-column: auto;
+  }
+  .doughs-card .basics > .callout {
+    grid-row: 2;
+    grid-column: 1 / -1;
+  }
+}
+
+/* Fields that wrap as the width allows: numbers at a number's width, a select as wide as its
+   longest option, text taking what is left. */
+.doughs-card .flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--sp-2);
+}
+.doughs-card .flow > .w-num {
+  flex: 0 1 8em;
+  min-width: 0;
+}
+.doughs-card .flow > .w-fit {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.doughs-card .flow > .w-text {
+  flex: 1 1 14em;
+  min-width: 0;
+}
+
+/*
+ * Enrichment and add-in rows. On a phone: what, how much and remove on the first line, then the
+ * rest a line each, the planner's note last. Wide, the rows share their columns (subgrid), so
+ * every select is as wide as the longest option in its column.
+ */
+.doughs-card .fieldrows {
+  display: grid;
+  gap: var(--sp-3);
+}
+.doughs-card .fieldrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6.5em auto;
+  gap: var(--sp-1) var(--sp-2);
+  align-items: end;
+}
+.doughs-card .fieldrow > .c-remove {
+  grid-row: 1;
+  grid-column: 3;
+}
+.doughs-card .fieldrow > :is(.c-at, .c-hint) {
+  grid-column: 1 / -1;
+}
+/* The planner's note takes the width its cell has and lends none to the columns it spans. */
+.doughs-card .fieldrow > .c-hint {
+  contain: inline-size;
+}
+.doughs-card .inc > .fieldrow {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+}
+.doughs-card .inc > .fieldrow + .fieldrow {
+  padding-top: var(--sp-3);
+  border-top: 1px dashed var(--line);
+}
+.doughs-card .inc .c-kind {
+  grid-area: 1 / 1;
+}
+.doughs-card .inc .c-amount {
+  grid-area: 1 / 2;
+}
+.doughs-card .inc .c-name {
+  grid-area: 2 / 1 / 3 / -1;
+}
+.doughs-card .inc .c-at {
+  grid-area: 3 / 1 / 4 / -1;
+}
+.doughs-card .inc .c-soak {
+  grid-area: 4 / 1;
+}
+.doughs-card .inc .c-note {
+  grid-area: 5 / 1 / 6 / -1;
+}
+.doughs-card .inc .c-hint {
+  grid-area: 6 / 1 / 7 / -1;
+}
+@media (min-width: 800px) {
+  /* Enrichments: what · how much · when (butter only) · the planner's note · remove. */
+  .doughs-card .fieldrows.enr {
+    grid-template-columns: auto 6.5em auto minmax(0, 1fr) auto;
+    column-gap: var(--sp-2);
+  }
+  .doughs-card .enr > .fieldrow {
+    grid-column: 1 / -1;
+    grid-template-columns: 9em 6.5em 15em minmax(0, 1fr) auto;
+    grid-template-columns: subgrid;
+  }
+  .doughs-card .enr > .fieldrow > * {
+    grid-row: 1;
+  }
+  .doughs-card .enr .c-kind {
+    grid-column: 1;
+  }
+  .doughs-card .enr .c-amount {
+    grid-column: 2;
+  }
+  .doughs-card .enr .c-at {
+    grid-column: 3;
+  }
+  .doughs-card .enr .c-hint {
+    grid-column: 4;
+    align-self: center;
+  }
+  .doughs-card .enr .no-at > .c-hint {
+    grid-column: 3 / 5;
+  }
+  .doughs-card .enr .c-remove {
+    grid-column: 5;
+  }
+  /* Add-ins: what · name · how much · when · soaker · remove, then the note and the planner's. */
+  .doughs-card .fieldrows.inc {
+    grid-template-columns: auto minmax(8em, 1fr) 6.5em auto 6.5em auto;
+    column-gap: var(--sp-2);
+  }
+  .doughs-card .inc > .fieldrow {
+    grid-column: 1 / -1;
+    grid-template-columns: 9em minmax(8em, 1fr) 6.5em 15em 6.5em auto;
+    grid-template-columns: subgrid;
+  }
+  .doughs-card .inc .c-name {
+    grid-area: 1 / 2;
+  }
+  .doughs-card .inc .c-amount {
+    grid-area: 1 / 3;
+  }
+  .doughs-card .inc .c-at {
+    grid-area: 1 / 4;
+  }
+  .doughs-card .inc .c-soak {
+    grid-area: 1 / 5;
+  }
+  .doughs-card .inc .c-remove {
+    grid-area: 1 / 6;
+  }
+  .doughs-card .inc .c-note {
+    grid-area: 2 / 1 / 3 / 4;
+  }
+  .doughs-card .inc .c-hint {
+    grid-area: 2 / 4 / 3 / -1;
+    align-self: center;
+  }
+}

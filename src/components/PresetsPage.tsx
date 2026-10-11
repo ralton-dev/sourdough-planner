@@ -3,7 +3,8 @@ import { LEAN_DOUGH_ID, type Dough, type Preset, type ProofType } from "../lib/t
 import { DEFAULT_PRESETS, clonePresets } from "../lib/presets";
 import { newId } from "../lib/ids";
 import { NumberField } from "./NumberField";
-import { DoughsCard, doughTitle } from "./DoughsCard";
+import { DoughsCard, doughTitle, libraryColour } from "./DoughsCard";
+import "./doughs.css";
 
 interface Props {
   presets: Preset[];
@@ -63,7 +64,7 @@ export function PresetsPage({ presets, onChange, onExport, onImport, doughs, onD
 
   return (
     <div className="grid">
-      <section className="card">
+      <section className="card presets-card">
         <header>
           <h2>Presets</h2>
           <div className="row">
@@ -76,61 +77,79 @@ export function PresetsPage({ presets, onChange, onExport, onImport, doughs, onD
           </div>
         </header>
         <div className="stack">
-          {presets.map((p, i) => (
-            <div className="preset-card" key={p.id}>
-              <header>
-                <button
-                  type="button"
-                  className="btn ghost"
-                  style={{ flex: 1, textAlign: "left", whiteSpace: "normal" }}
-                  onClick={() => setOpen(open === p.id ? null : p.id)}
-                  aria-expanded={open === p.id}
-                >
-                  <strong>
-                    {p.icon} {p.name}
-                  </strong>{" "}
-                  <span className="muted small">
-                    {p.defaultWeight} g · {p.minWeight}–{p.maxWeight} g ·{" "}
-                    {p.flexPriority > 0 ? `flex ${p.flexPriority}` : "fixed"} · {p.proof}
-                    {p.doughId && p.doughId !== LEAN_DOUGH_ID && (
-                      <> · {doughName(p.doughId, library)}</>
+          {presets.map((p, i) => {
+            const isOpen = open === p.id;
+            return (
+              <div className="preset-card" key={p.id}>
+                <header>
+                  <button
+                    type="button"
+                    className="btn ghost entry-open"
+                    onClick={() => setOpen(isOpen ? null : p.id)}
+                    aria-expanded={isOpen}
+                  >
+                    <strong>
+                      {p.icon} {p.name}
+                    </strong>
+                    {!isOpen && (
+                      <>
+                        {" "}
+                        <span className="note-planner">
+                          {p.defaultWeight} g · {p.minWeight}–{p.maxWeight} g ·{" "}
+                          {p.flexPriority > 0 ? `flex ${p.flexPriority}` : "fixed"} · {p.proof}
+                          {p.doughId && p.doughId !== LEAN_DOUGH_ID && (
+                            <>
+                              {" · "}
+                              <span
+                                className={`dough-tag dough-${libraryColour(p.doughId, library)}`}
+                              >
+                                {doughName(p.doughId, library)}
+                              </span>
+                            </>
+                          )}
+                        </span>
+                      </>
                     )}
-                  </span>
-                </button>
-                <div className="actions">
-                  <button
-                    type="button"
-                    className="btn icon"
-                    aria-label="Move up"
-                    disabled={i === 0}
-                    onClick={() => move(i, -1)}
-                  >
-                    ↑
                   </button>
-                  <button
-                    type="button"
-                    className="btn icon"
-                    aria-label="Move down"
-                    disabled={i === presets.length - 1}
-                    onClick={() => move(i, 1)}
-                  >
-                    ↓
-                  </button>
-                  <button
-                    type="button"
-                    className="btn icon danger"
-                    aria-label="Delete"
-                    onClick={() => remove(p)}
-                  >
-                    ×
-                  </button>
-                </div>
-              </header>
-              {open === p.id && (
-                <PresetForm preset={p} doughs={library} onChange={(patch) => update(p.id, patch)} />
-              )}
-            </div>
-          ))}
+                  <div className="actions">
+                    <button
+                      type="button"
+                      className="btn icon"
+                      aria-label={`Move ${p.name} up`}
+                      disabled={i === 0}
+                      onClick={() => move(i, -1)}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="btn icon"
+                      aria-label={`Move ${p.name} down`}
+                      disabled={i === presets.length - 1}
+                      onClick={() => move(i, 1)}
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      className="btn icon danger"
+                      aria-label={`Delete ${p.name}`}
+                      onClick={() => remove(p)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                </header>
+                {isOpen && (
+                  <PresetForm
+                    preset={p}
+                    doughs={library}
+                    onChange={(patch) => update(p.id, patch)}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -143,30 +162,32 @@ export function PresetsPage({ presets, onChange, onExport, onImport, doughs, onD
             Presets, doughs, bulk table, saved plans and the current plan as JSON.
           </span>
         </header>
-        <div className="row">
-          <button type="button" className="btn" onClick={onExport}>
-            Export JSON
-          </button>
-          <button type="button" className="btn" onClick={() => fileRef.current?.click()}>
-            Import JSON
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            onChange={async (e) => {
-              const f = e.target.files?.[0];
-              if (!f) return;
-              onImport(await f.text());
-              e.target.value = "";
-            }}
-          />
+        <div className="stack">
+          <div className="row">
+            <button type="button" className="btn" onClick={onExport}>
+              Export JSON
+            </button>
+            <button type="button" className="btn" onClick={() => fileRef.current?.click()}>
+              Import JSON
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="application/json,.json"
+              hidden
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                onImport(await f.text());
+                e.target.value = "";
+              }}
+            />
+          </div>
+          <p className="note-planner">
+            Everything lives in this browser. Export before clearing site data or moving to another
+            device.
+          </p>
         </div>
-        <p className="muted small" style={{ marginTop: 8 }}>
-          Everything lives in this browser. Export before clearing site data or moving to another
-          device.
-        </p>
       </section>
     </div>
   );
@@ -203,7 +224,7 @@ function PresetForm({
   const dangling = doughId !== LEAN_DOUGH_ID && !dough;
   const override = dough && bakeOverride(dough);
   return (
-    <div className="stack" style={{ marginTop: 10 }}>
+    <div className="stack entry-form">
       <div className="fields">
         <div className="field">
           <label htmlFor={`${p.id}-name`}>Name</label>
@@ -224,25 +245,28 @@ function PresetForm({
             onChange={(e) => onChange({ icon: e.target.value })}
           />
         </div>
-        <div className="field">
+        <div className="field f-dough">
           <label htmlFor={`${p.id}-dough`}>Dough</label>
-          <select
-            id={`${p.id}-dough`}
-            value={doughId}
-            onChange={(e) =>
-              onChange({
-                doughId: e.target.value === LEAN_DOUGH_ID ? undefined : e.target.value,
-              })
-            }
-          >
-            <option value={LEAN_DOUGH_ID}>Main dough</option>
-            {doughs.map((d) => (
-              <option key={d.id} value={d.id}>
-                {doughTitle(d)}
-              </option>
-            ))}
-            {dangling && <option value={doughId}>{doughId} (not found)</option>}
-          </select>
+          <div className={`tagwrap dough-${libraryColour(doughId, doughs)}`}>
+            <span className="dough-tag" aria-hidden="true" />
+            <select
+              id={`${p.id}-dough`}
+              value={doughId}
+              onChange={(e) =>
+                onChange({
+                  doughId: e.target.value === LEAN_DOUGH_ID ? undefined : e.target.value,
+                })
+              }
+            >
+              <option value={LEAN_DOUGH_ID}>Main dough</option>
+              {doughs.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {doughTitle(d)}
+                </option>
+              ))}
+              {dangling && <option value={doughId}>{doughId} (not found)</option>}
+            </select>
+          </div>
           <div className="hint">
             {dangling
               ? "Not in the library: items plan on the main dough."
@@ -352,7 +376,7 @@ function PresetForm({
         </label>
       </div>
       {dough && override && (
-        <p className="muted small">
+        <p className="note-planner">
           {`${dough.name} sets ${override}; the dough's bake wins over this preset's, and the bake times stay these.`}
         </p>
       )}
