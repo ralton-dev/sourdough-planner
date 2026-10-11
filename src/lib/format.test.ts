@@ -3,6 +3,7 @@ import { batchFromStarter } from "./calc";
 import {
   checkRow,
   fmtDuration,
+  fmtPct,
   fmtPctRange,
   fmtSalt,
   joinAnd,
@@ -109,6 +110,28 @@ describe("check row per mix", () => {
     // Two addition lines that round up too: +3 is rounding with them in.
     const more = { ...plain, totalDough: 304, additions: [line("milk", 0.5), line("egg", 0.5)] };
     expect(checkRow(more, false)).toMatchObject({ sum: 307, diff: 3, ok: true });
+  });
+});
+
+describe("percentages (decision 35)", () => {
+  /** U+2009 THIN SPACE, between the number and its sign. */
+  const THIN = "\u2009";
+
+  it("drops a zero decimal and sets the sign off with a thin space", () => {
+    expect(fmtPct(0.65)).toBe(`65${THIN}%`);
+    expect(fmtPct(0.75)).toBe(`75${THIN}%`);
+    expect(fmtPct(1)).toBe(`100${THIN}%`);
+    expect(fmtPct(0.725)).toBe(`72.5${THIN}%`);
+    // The number itself does not change: still rounded to one decimal.
+    expect(fmtPct(0.7628)).toBe(`76.3${THIN}%`);
+    expect(fmtPct(0.74999)).toBe(`75${THIN}%`);
+  });
+
+  it("keeps dp as the decimals it rounds to, dropping them only when they are all zero", () => {
+    expect(fmtPct(0.7628, 0)).toBe(`76${THIN}%`);
+    expect(fmtPct(0.7628, 2)).toBe(`76.28${THIN}%`);
+    expect(fmtPct(0.725, 2)).toBe(`72.50${THIN}%`);
+    expect(fmtPct(0.75, 2)).toBe(`75${THIN}%`);
   });
 });
 

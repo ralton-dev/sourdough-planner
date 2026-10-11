@@ -16,8 +16,12 @@ export function fmtSalt(n: number, halfGram: boolean): string {
   return `${Number.isInteger(v) ? v : v.toFixed(1)} g`;
 }
 
+/**
+ * A fraction as a percentage to `dp` decimals, as the cards print it (decision 35): "65 %",
+ * "72.5 %". A whole number drops its zero decimals; a thin space (U+2009) sets off the sign.
+ */
 export function fmtPct(frac: number, dp = 1): string {
-  return `${(frac * 100).toFixed(dp)}%`;
+  return `${(frac * 100).toFixed(dp).replace(/\.0+$/, "")}\u2009%`;
 }
 
 /**

@@ -120,7 +120,10 @@ export interface DoughTrack {
   name: string;
   icon?: string;
   method: EffectiveMethod;
-  /** Why it is mixed the way it is, from computePlan: "Mixed separately: …", "Split off at …". */
+  /**
+   * Why it is mixed the way it is, from computePlan: "Mixed separately: …", "Split off at …"; empty
+   * for the main dough, which is the batch settings.
+   */
   reason: string;
   /** base: bulk, divide, bench. separate: mix@, bulk@, divide@, bench@. split: split@, bulk@, divide@, bench@. */
   steps: TimelineStep[];
@@ -179,16 +182,26 @@ const INTO_BULK_MIN: Record<SplitAt, number> = {
   fold2: 2 * FOLD_INTERVAL_MIN,
 };
 
-/** Holding water back for the salt needs a water line with that much in it (as the ingredients card). */
-const RESERVE_WATER_G = 20;
+/**
+ * Holding ~20 g of water back for the salt is worth saying only when that is a tenth of the water
+ * line or less: 200 g or more (the ingredients card keeps the same rule).
+ */
+const RESERVE_FROM_WATER_G = 200;
 
 /** A plain mix, by hand or by mixer; it keeps water back for the salt only when it has the water. */
 function plainMixNote(mixer: boolean, addedWater: number): string {
-  const reserve = addedWater >= RESERVE_WATER_G ? " Reserve ~20 g water for the salt." : "";
+  const reserve = addedWater >= RESERVE_FROM_WATER_G ? " Reserve ~20 g water for the salt." : "";
   return mixer
     ? `Dough hook, low speed 2–3 min to combine, then speed 2 for 4–6 min until smooth and elastic.${reserve} Watch the dough temperature; the mixer warms it.`
     : `Add starter and salt.${reserve}`;
 }
+
+/** "Mix", or "Mix (main dough)" for the shared mix beside other tracks; a stand mixer says so. */
+function mixLabel(plan: Pick<Plan, "standMixer">, main: boolean): string {
+  if (main) return plan.standMixer ? "Mix (main dough, stand mixer)" : "Mix (main dough)";
+  return plan.standMixer ? "Mix (stand mixer)" : "Mix";
+}
+
 const BULK_NOTE = "Target a 50–75 % rise, domed and jiggly. The clock is a guide.";
 const DIVIDE_NOTE = "Weigh each piece from the division card.";
 
@@ -251,7 +264,7 @@ export function buildTimeline(
         `tangzhong@${d.doughId}`,
         "Cook tangzhong",
         cooling ? 15 : 45,
-        tangzhongNote(d, tz),
+        tangzhongNote(d, tz, plan.feedStarter === true),
       );
     }
   }
@@ -269,7 +282,7 @@ export function buildTimeline(
     }
     const mixMinutes = baseMix?.mixMinutes ?? 10;
     const note = plainMixNote(plan.standMixer === true, baseMix?.addedWater ?? 0);
-    prefix.push("mix", plan.standMixer ? "Mix (stand mixer)" : "Mix", mixMinutes, note);
+    prefix.push("mix", mixLabel(plan, false), mixMinutes, note);
 
     // The batch's bulk: the clock every split runs on. When the main dough only rests until its
     // splits, no step shows this bulk, so an edit to it (left from a plan that had lean pieces)
@@ -313,8 +326,6 @@ export function buildTimeline(
         .map((t) => t.steps[0]!)
         .reduce((a, b) => (b.end.getTime() > a.end.getTime() ? b : a));
       const minutes = (last.end.getTime() - batch.bulk.start.getTime()) / 60_000;
-      const names = splitTracks.map((t) => t.name);
-      const carry = names.length === 1 ? "track carries" : "tracks carry";
       steps = [
         {
           ...batch.bulk,
@@ -322,7 +333,7 @@ export function buildTimeline(
           end: last.end,
           minutes,
           defaultMinutes: minutes,
-          note: `The whole batch rests until it is split; the ${listOf(names)} ${carry} on from there.`,
+          note: "The whole batch rests until it is split.",
           fixed: true,
         },
       ];
@@ -343,6 +354,11 @@ export function buildTimeline(
   }
   tracks.push(...others);
   const trackOf = new Map(tracks.map((t) => [t.doughId, t] as const));
+  // Beside another dough's track (its own mix, or a split) the shared mix is the main dough's.
+  const common =
+    tracks.length > 1
+      ? prefix.steps.map((st) => (st.id === "mix" ? { ...st, label: mixLabel(plan, true) } : st))
+      : prefix.steps;
 
   // One lane per (preset, dough) line, in item order, from its own track's bench rest (decision 2).
   const lanes: Lane[] = [];
@@ -378,7 +394,7 @@ export function buildTimeline(
   }
 
   return {
-    steps: prefix.steps,
+    steps: common,
     tracks,
     foldCount,
     defaultFoldCount: defaultFoldCount(plan),
@@ -400,7 +416,7 @@ function separateTrack(
   const enriched = d.additions.some((a) => a.kind in ENRICHMENTS && a.grams > 0);
   run.push(
     `mix@${d.doughId}`,
-    plan.standMixer ? "Mix (stand mixer)" : "Mix",
+    mixLabel(plan, false),
     mix?.mixMinutes ?? 10,
     separateMixNote(d, mix, plan, enriched),
   );
@@ -494,11 +510,15 @@ function tangzhongOf(d: DoughResult, mix: MixResult | undefined): TangzhongLines
   return undefined;
 }
 
-/** §5, decision 20: the make-it-first step, with the grams of its two lines and the method. */
-function tangzhongNote(d: DoughResult, tz: TangzhongLines): string {
+/**
+ * §5, decision 20: the make-it-first step, with the grams of its two lines and the method. `fed`:
+ * a starter feed follows, so the paste is sure to wait more than two hours, and the note says so.
+ */
+function tangzhongNote(d: DoughResult, tz: TangzhongLines, fed: boolean): string {
   // "Tangzhong water" or "Tangzhong milk": calc names the one liquid it took.
   const liquid = tz.liquid.label.replace(/^tangzhong\s+/i, "").toLowerCase() || "liquid";
-  return `Tangzhong for ${d.name}: cook ${grams(tz.flour.grams)} flour with ${grams(tz.liquid.grams)} ${liquid}, stirring, to 65 °C, a thick paste that holds a line. Cool to room temperature before it goes in. Made the day before and kept in the fridge is fine: bring it back to room temperature. If it waits more than about two hours (it will while the starter feeds), keep it in the fridge and bring it back to room temperature before the mix.`;
+  const wait = fed ? " (it will while the starter feeds)" : "";
+  return `Tangzhong for ${d.name}: cook ${grams(tz.flour.grams)} flour with ${grams(tz.liquid.grams)} ${liquid}, stirring, to 65 °C, a thick paste that holds a line. Cool to room temperature before it goes in. Made the day before and kept in the fridge is fine: bring it back to room temperature. If it waits more than about two hours${wait}, keep it in the fridge and bring it back to room temperature before the mix.`;
 }
 
 /** §5, decision 11: how much base dough to take, and everything that goes into it now. */

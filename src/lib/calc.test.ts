@@ -21,6 +21,7 @@ import {
   type Plan,
   type Preset,
   type Settings,
+  type SplitAt,
 } from "./types";
 
 const REF: Settings = {
@@ -1007,6 +1008,58 @@ describe("§4 multi-dough maths", () => {
     // B3 is items mode and on one dough only: no base mix, no lean dough.
     expect(r.mixes.map((x) => x.id)).toEqual(["soft-sandwich"]);
     expect(r.doughs.map((x) => x.doughId)).toEqual(["soft-sandwich"]);
+  });
+
+  it("gives the main dough no reason line: it is the batch settings, with nothing to explain", () => {
+    expect(doughOf(computePlan(refPlan(), REF_PRESETS, DOUGHS), LEAN_DOUGH_ID)?.reason).toBe("");
+    const a = computePlan(exampleA(), REF_PRESETS, DOUGHS);
+    expect(a.doughs.map((d) => [d.doughId, d.reason])).toEqual([
+      [LEAN_DOUGH_ID, ""],
+      [
+        "jalapeno-cheddar",
+        "Split off at fold 1: cheese and chilli worked into a portion of the main dough.",
+      ],
+    ]);
+    expect(exampleB("soft-bun").doughs.map((d) => [d.doughId, d.reason])).toEqual([
+      [LEAN_DOUGH_ID, ""],
+      [
+        "soft-bun",
+        "Mixed separately: egg and milk have to go in with the water; it has its own hydration and salt.",
+      ],
+    ]);
+  });
+
+  it("says where a split dough leaves the main dough, so no card reads it out of the reason", () => {
+    const a = computePlan(exampleA(), REF_PRESETS, DOUGHS);
+    expect(a.doughs.map((d) => [d.doughId, d.splitAt])).toEqual([
+      [LEAN_DOUGH_ID, undefined],
+      ["jalapeno-cheddar", "fold1"],
+    ]);
+    const splitAt = (at: SplitAt) => {
+      const doughs = libraryWith({ ...libraryDough("jalapeno-cheddar"), splitAt: at });
+      const d = doughOf(computePlan(exampleA(), REF_PRESETS, doughs), "jalapeno-cheddar");
+      return [d?.splitAt, d?.reason];
+    };
+    expect(splitAt("mix")).toEqual([
+      "mix",
+      "Split off at the end of the mix: cheese and chilli worked into a portion of the main dough.",
+    ]);
+    expect(splitAt("fold2")).toEqual([
+      "fold2",
+      "Split off at fold 2: cheese and chilli worked into a portion of the main dough.",
+    ]);
+    // A point the code does not know (a hand-edited store) is fold 1, as the reason and the
+    // timeline both read it.
+    expect(splitAt("fold9" as SplitAt)).toEqual([
+      "fold1",
+      "Split off at fold 1: cheese and chilli worked into a portion of the main dough.",
+    ]);
+    // A separate dough has a mix of its own, not a split point; nor does the main dough.
+    expect(exampleB("soft-bun").doughs.map((d) => [d.doughId, d.splitAt])).toEqual([
+      [LEAN_DOUGH_ID, undefined],
+      ["soft-bun", undefined],
+    ]);
+    expect(exampleB("soft-bun").doughs.some((d) => "splitAt" in d)).toBe(false);
   });
 
   /*

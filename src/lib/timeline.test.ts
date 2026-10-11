@@ -452,9 +452,7 @@ describe("§5 multi-dough timeline", () => {
       expect([at(rest.start), rest.minutes, at(rest.end)]).toEqual([10, 40, 50]);
       expect(at(rest.end)).toBe(at(stepOf(t, "split@jalapeno-cheddar")?.end));
       expect(rest.label).toBe("Bulk ferment (until the split)");
-      expect(rest.note).toBe(
-        "The whole batch rests until it is split; the Jalapeño cheddar track carries on from there.",
-      );
+      expect(rest.note).toBe("The whole batch rests until it is split.");
       expect(rest.fixed).toBe(true);
       expect(at(base.benchEnd)).toBe(50);
       expect(base.folds).toEqual([]); // the one before the split would be at the split itself
@@ -523,9 +521,7 @@ describe("§5 multi-dough timeline", () => {
       expect(base.steps.map(run)).toEqual([["bulk", 10, 70]]);
       expect(at(base.steps[0]!.end)).toBe(at(stepOf(t, "split@seeded")?.end));
       expect(at(stepOf(t, "split@jalapeno-cheddar")?.end)).toBe(50);
-      expect(base.steps[0]!.note).toBe(
-        "The whole batch rests until it is split; the Jalapeño cheddar and Seeded tracks carry on from there.",
-      );
+      expect(base.steps[0]!.note).toBe("The whole batch rests until it is split.");
       // The fold at 09:40 is still the main dough's: the seeded share is in it until 10:10.
       expect(base.folds.map(at)).toEqual([40]);
       expect(ids(t)).not.toContain("divide");
@@ -553,6 +549,29 @@ describe("§5 multi-dough timeline", () => {
         "Work in",
         "This is all of the main dough.",
       ]);
+    });
+
+    it("says only that the main dough rests: each split's own steps say what comes after", () => {
+      const one = refTimeline({ mode: "items", items: TWO_JALAPENO });
+      const two = refTimeline(
+        {
+          mode: "items",
+          items: [
+            { presetId: "loaf", count: 1, doughId: "jalapeno-cheddar" },
+            { presetId: "loaf", count: 1, doughId: "seeded" },
+          ],
+        },
+        editDough("seeded", { splitAt: "fold2" }),
+      );
+      for (const t of [one, two]) {
+        expect(t.tracks[0]!.steps.map((st) => [st.id, st.label, st.note])).toEqual([
+          ["bulk", "Bulk ferment (until the split)", "The whole batch rests until it is split."],
+        ]);
+        const notes = [...t.steps, ...t.tracks.flatMap((tr) => tr.steps)].map(
+          (st) => st.note ?? "",
+        );
+        expect(notes.filter((n) => /\btracks?\b|carr(?:y|ies) on/.test(n))).toEqual([]);
+      }
     });
 
     it("leaves a starter batch's spare in the main dough: still portioned, still undivided", () => {
@@ -682,6 +701,44 @@ describe("§5 multi-dough timeline", () => {
     expect(stepOf(wet, "bake:roll@wet")?.note).toBe("220 °C, 18–22 min, steam");
   });
 
+  it("names the shared mix the main dough's once another dough has a track beside it", () => {
+    const labels = (t: Timeline) => t.steps.map((st) => [st.id, st.label]);
+    // Example B: the main dough and a separate soft-bun mix, each with its own "Mix".
+    const b = refTimeline({ mode: "items", items: exampleB() });
+    expect(b.tracks).toHaveLength(2);
+    expect(labels(b)).toEqual([["mix", "Mix (main dough)"]]);
+    expect(stepOf(b, "mix@soft-bun")?.label).toBe("Mix");
+    const mixer = refTimeline({ mode: "items", items: exampleB(), standMixer: true });
+    expect(labels(mixer)).toEqual([["mix", "Mix (main dough, stand mixer)"]]);
+    expect(stepOf(mixer, "mix@soft-bun")?.label).toBe("Mix (stand mixer)");
+    // A split is a track of its own too; the feed and the autolyse keep their names.
+    const a = refTimeline({ items: EXAMPLE_A, feedStarter: true, autolyse: true });
+    expect(labels(a)).toEqual([
+      ["feed", "Feed starter"],
+      ["autolyse", "Autolyse"],
+      ["mix", "Mix (main dough)"],
+    ]);
+    // The name moves nothing: the same id at the same minute for the same length.
+    expect(b.steps.map(run)).toEqual([["mix", 0, 10]]);
+    expect(a.steps.map(run)).toEqual([
+      ["feed", 0, 360],
+      ["autolyse", 360, 45],
+      ["mix", 405, 10],
+    ]);
+    // One track, as in every all-lean plan (a line on a missing dough is timed as lean): "Mix".
+    const lean = refTimeline({});
+    expect(lean.tracks).toHaveLength(1);
+    expect(labels(lean)).toEqual([["mix", "Mix"]]);
+    expect(labels(refTimeline({ standMixer: true }))).toEqual([["mix", "Mix (stand mixer)"]]);
+    const gone = refTimeline({
+      items: [
+        { presetId: "loaf", count: 1 },
+        { presetId: "loaf", count: 1, doughId: "gone" },
+      ],
+    });
+    expect(labels(gone)).toEqual([["mix", "Mix"]]);
+  });
+
   it("keeps water back for the salt only where a plain mix has that much water", () => {
     // Example B: the main mix has 433 g of water and says so; the enriched bun mix never does.
     const b = refTimeline({ mode: "items", items: exampleB() });
@@ -740,6 +797,55 @@ describe("§5 multi-dough timeline", () => {
     expect(stepOf(tiny, "mix")?.note).toBe("Add starter and salt.");
   });
 
+  it("keeps ~20 g of water back for the salt from 200 g of water up, on a plain mix only", () => {
+    const RESERVE = "Add starter and salt. Reserve ~20 g water for the salt.";
+    // At 100 % hydration and 25 % inoculation the main mix's water is four times its starter:
+    // 50 g of starter makes exactly 200 g of water, 49.75 g makes 199 g.
+    const lean = (starterWeight: number, standMixer = false) => {
+      const p = plan({ starterWeight, standMixer, settings: { ...REF, hydration: 1 } });
+      const water = computePlan(p, REF_PRESETS, DOUGHS).mixes[0]?.addedWater;
+      return [water, stepOf(build(p), "mix")?.note];
+    };
+    expect(lean(50)).toEqual([200, RESERVE]);
+    expect(lean(49.75)).toEqual([199, "Add starter and salt."]);
+    expect(lean(50, true)[1]).toBe(
+      "Dough hook, low speed 2–3 min to combine, then speed 2 for 4–6 min until smooth and elastic. Reserve ~20 g water for the salt. Watch the dough temperature; the mixer warms it.",
+    );
+    expect(lean(49.75, true)[1]).toBe(
+      "Dough hook, low speed 2–3 min to combine, then speed 2 for 4–6 min until smooth and elastic. Watch the dough temperature; the mixer warms it.",
+    );
+    // A plain separate mix follows the same line, read off its water as weighed.
+    const wetDough: Dough = {
+      id: "wet",
+      name: "Wet",
+      method: "auto",
+      hydration: 0.85,
+      enrichments: [],
+      inclusions: [],
+    };
+    const doughs = [...DOUGHS, wetDough];
+    const wetPlan = plan({ settings: REF, mode: "items", items: exampleB("wet") });
+    const r = computePlan(wetPlan, REF_PRESETS, doughs);
+    const wetNote = (addedWater: number) => {
+      const mixes = r.mixes.map((m) => (m.id === "wet" ? { ...m, addedWater } : m));
+      const t = buildTimeline(wetPlan, REF_PRESETS, DEFAULT_BULK_TABLE, doughs, { ...r, mixes });
+      return stepOf(t, "mix@wet")?.note;
+    };
+    expect(wetNote(200)).toBe(RESERVE);
+    expect(wetNote(199)).toBe("Add starter and salt.");
+    // An enriched mix never does, whatever its water: thirty soft buns hold 236 g of it.
+    const buns = plan({
+      settings: REF,
+      mode: "items",
+      items: [{ presetId: "roll", count: 30, weightOverride: 120, doughId: "soft-bun" }],
+    });
+    expect(computePlan(buns, REF_PRESETS, DOUGHS).mixes[0]?.addedWater).toBeGreaterThan(200);
+    expect(stepOf(build(buns), "mix@soft-bun")?.note).not.toMatch(/Reserve/);
+    expect(stepOf(build({ ...buns, standMixer: true }), "mix@soft-bun")?.note).not.toMatch(
+      /Reserve/,
+    );
+  });
+
   it("gives a line keyed #2 a lane of its own", () => {
     const softLoaf = REF_PRESETS.map((p) => (p.id === "loaf" ? { ...p, doughId: "soft-bun" } : p));
     const p = plan({
@@ -775,7 +881,7 @@ describe("§5 multi-dough timeline", () => {
     ]);
     expect(b3.steps[0]?.label).toBe("Cook tangzhong");
     expect(b3.steps[0]?.note).toBe(
-      "Tangzhong for Soft sandwich dough: cook 22 g flour with 108 g water, stirring, to 65 °C, a thick paste that holds a line. Cool to room temperature before it goes in. Made the day before and kept in the fridge is fine: bring it back to room temperature. If it waits more than about two hours (it will while the starter feeds), keep it in the fridge and bring it back to room temperature before the mix.",
+      "Tangzhong for Soft sandwich dough: cook 22 g flour with 108 g water, stirring, to 65 °C, a thick paste that holds a line. Cool to room temperature before it goes in. Made the day before and kept in the fridge is fine: bring it back to room temperature. If it waits more than about two hours, keep it in the fridge and bring it back to room temperature before the mix.",
     );
     expect(stepOf(b3, "mix@soft-sandwich")?.note).toMatch(
       /^Cooled tangzhong in with the milk and water, then the starter, flour and salt: knead to a windowpane\. Butter in pieces over 5–8 min\./,
@@ -821,6 +927,28 @@ describe("§5 multi-dough timeline", () => {
       TZ_DOUGHS,
     );
     expect(at(stepOf(slow, "mix@soft-sandwich")?.start)).toBe(60);
+  });
+
+  it("says the paste will wait while the starter feeds only when there is a feed", () => {
+    const paste = (over: Partial<Plan>, items: ItemSelection[] = EXAMPLE_B3) => {
+      const t = refTimeline({ mode: "items", items, ...over }, TZ_DOUGHS);
+      return [run(t.steps[0]!), t.steps[0]?.note];
+    };
+    const [fedRun, fed] = paste({ feedStarter: true });
+    expect(fedRun).toEqual(["tangzhong@soft-sandwich", 0, 15]);
+    expect(fed).toContain(
+      "If it waits more than about two hours (it will while the starter feeds), keep it in the fridge",
+    );
+    const [plainRun, plain] = paste({});
+    expect(plainRun).toEqual(["tangzhong@soft-sandwich", 0, 45]);
+    expect(plain).toContain("If it waits more than about two hours, keep it in the fridge");
+    // An autolyse cools the paste too, but for 45 minutes: no feed, no clause.
+    const [restedRun, rested] = paste({ autolyse: true }, [
+      ...EXAMPLE_B3,
+      { presetId: "loaf", count: 1 },
+    ]);
+    expect(restedRun).toEqual(["tangzhong@soft-sandwich", 0, 15]);
+    expect(rested).not.toContain("starter feeds");
   });
 
   it("leaves out the main mix when nothing is on it (items mode, separate doughs only)", () => {

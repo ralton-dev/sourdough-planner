@@ -591,6 +591,7 @@ function perDough(share: Share, s: Settings): { result: DoughResult; mix?: MixRe
     const result: DoughResult = {
       ...common,
       mixId: "base",
+      splitAt: splitPoint(d),
       flour: F,
       water,
       starter,
@@ -790,9 +791,18 @@ const SPLIT_AT: Record<SplitAt, string> = {
   fold2: "fold 2",
 };
 
-/** The one-line why under a dough's heading: "Mixed separately: …", "Split off at fold 1: …". */
+/** Where a split dough leaves the main dough: its own point, or fold 1 for one the code lacks. */
+const splitPoint = (d: Dough): SplitAt => {
+  const at = splitAtFor(d);
+  return Object.hasOwn(SPLIT_AT, at) ? at : "fold1";
+};
+
+/**
+ * The one-line why under a dough's heading: "Mixed separately: …", "Split off at fold 1: …". The
+ * main dough has none: it is the batch settings, and a card has nothing to say about it.
+ */
 function reasonFor(d: Dough, method: EffectiveMethod): string {
-  if (method === "base") return "The main dough: the batch settings, nothing added.";
+  if (method === "base") return "";
   if (method === "split") {
     const what = [
       ...d.enrichments
@@ -806,7 +816,7 @@ function reasonFor(d: Dough, method: EffectiveMethod): string {
         .map((x) => (INCLUSIONS[x.kind]?.label ?? x.kind).toLowerCase()),
     ];
     const worked = what.length > 0 ? `${joinAnd([...new Set(what)])} worked into ` : "";
-    return `Split off at ${SPLIT_AT[splitAtFor(d)] ?? "fold 1"}: ${worked}a portion of the main dough.`;
+    return `Split off at ${SPLIT_AT[splitPoint(d)]}: ${worked}a portion of the main dough.`;
   }
   const reasons = separateReasons(d);
   const own = reasons.filter((r) => r.startsWith("own ")).map((r) => r.slice(4));

@@ -143,6 +143,8 @@ export interface DoughResult {
   mass: number; // dough including additions, before bench loss
   usable: number; // mass × (1 − benchLoss)
   portion?: number; // split only: grams of base dough to take at the split
+  /** Split only: where it leaves the main dough, as its reason says; cards read this, not that. */
+  splitAt?: SplitAt;
   trueHydration: number;
   bulkFactor: number;
   reason: string; // "Mixed separately: egg and milk have to go in with the water."
