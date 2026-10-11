@@ -1,17 +1,18 @@
 import { describe, expect, it } from "vitest";
+import { computePlan } from "./calc";
 import { cloneDoughs } from "./doughs";
 import {
   DEFAULT_BULK_TABLE,
   buildTimeline,
   bulkEstimate,
   foldCountFor,
-  laneLabel,
   type Timeline,
   type TimelineStep,
 } from "./timeline";
 import {
   DEFAULT_SETTINGS,
   LEAN_DOUGH_ID,
+  type BatchResult,
   type Dough,
   type ItemSelection,
   type Plan,
@@ -132,6 +133,12 @@ const laneOf = (t: Timeline, key: string) => t.lanes.find((l) => l.key === key);
 
 /** The seeded dough library, unedited. */
 const DOUGHS = cloneDoughs();
+/**
+ * The timeline as App builds it: from computePlan's result for the same plan, passed explicitly
+ * so the parameter can become required (decision 21) without touching these tests.
+ */
+const build = (p: Plan, doughs: Dough[] = DOUGHS, presets: Preset[] = REF_PRESETS) =>
+  buildTimeline(p, presets, DEFAULT_BULK_TABLE, doughs, computePlan(p, presets, doughs));
 /** The library with one dough edited. */
 const editDough = (id: string, patch: Partial<Dough>): Dough[] =>
   DOUGHS.map((d) => (d.id === id ? { ...d, ...patch } : d));
@@ -170,7 +177,7 @@ describe("bulk estimate", () => {
 
 describe("timeline", () => {
   it("chains core steps from the start time and cascades edits", () => {
-    const t = buildTimeline(plan(), REF_PRESETS, DEFAULT_BULK_TABLE, DOUGHS);
+    const t = build(plan());
     const steps = baseSteps(t);
     expect(steps.map((s) => s.id)).toEqual(["mix", "bulk", "divide", "bench"]);
     expect(t.steps.map((s) => s.id)).toEqual(["mix"]);
@@ -181,12 +188,7 @@ describe("timeline", () => {
     for (let i = 1; i < steps.length; i++) {
       expect(steps[i]?.start.getTime()).toBe(steps[i - 1]?.end.getTime());
     }
-    const edited = buildTimeline(
-      plan({ timelineOverrides: { bulk: 240 } }),
-      REF_PRESETS,
-      DEFAULT_BULK_TABLE,
-      DOUGHS,
-    );
+    const edited = build(plan({ timelineOverrides: { bulk: 240 } }));
     expect(edited.tracks[0]?.bulk.usedMinutes).toBe(240);
     const shift = 60 * 60_000;
     expect(baseSteps(edited)[2]!.start.getTime()).toBe(steps[2]!.start.getTime() - shift);
@@ -196,12 +198,7 @@ describe("timeline", () => {
   });
 
   it("adds optional feed and autolyse steps first", () => {
-    const t = buildTimeline(
-      plan({ feedStarter: true, autolyse: true }),
-      REF_PRESETS,
-      DEFAULT_BULK_TABLE,
-      DOUGHS,
-    );
+    const t = build(plan({ feedStarter: true, autolyse: true }));
     expect(baseSteps(t).map((s) => s.id)).toEqual([
       "feed",
       "autolyse",
@@ -215,7 +212,7 @@ describe("timeline", () => {
   });
 
   it("places four stretch-and-folds at 30 min intervals inside bulk", () => {
-    const t = buildTimeline(plan(), REF_PRESETS, DEFAULT_BULK_TABLE, DOUGHS);
+    const t = build(plan());
     const base = t.tracks[0]!;
     const bulk = base.steps.find((s) => s.id === "bulk")!;
     expect(base.folds).toHaveLength(4);
@@ -224,7 +221,7 @@ describe("timeline", () => {
   });
 
   it("drops to one early fold with a stand mixer and changes the mix note", () => {
-    const t = buildTimeline(plan({ standMixer: true }), REF_PRESETS, DEFAULT_BULK_TABLE, DOUGHS);
+    const t = build(plan({ standMixer: true }));
     const base = t.tracks[0]!;
     const bulk = base.steps.find((s) => s.id === "bulk")!;
     expect(t.foldCount).toBe(1);
@@ -237,22 +234,17 @@ describe("timeline", () => {
   });
 
   it("lets the fold count be overridden and keeps folds in the first 30 min slots", () => {
-    const six = buildTimeline(plan({ foldCount: 6 }), REF_PRESETS, DEFAULT_BULK_TABLE, DOUGHS);
+    const six = build(plan({ foldCount: 6 }));
     const bulk = six.tracks[0]!.steps.find((s) => s.id === "bulk")!;
     expect(six.tracks[0]!.folds.map((f) => (f.getTime() - bulk.start.getTime()) / 60_000)).toEqual([
       30, 60, 90, 120, 150, 180,
     ]);
     expect(six.defaultFoldCount).toBe(4);
-    const mixerTwo = buildTimeline(
-      plan({ standMixer: true, foldCount: 2 }),
-      REF_PRESETS,
-      DEFAULT_BULK_TABLE,
-      DOUGHS,
-    );
+    const mixerTwo = build(plan({ standMixer: true, foldCount: 2 }));
     expect(
       mixerTwo.tracks[0]!.folds.map((f) => (f.getTime() - bulk.start.getTime()) / 60_000),
     ).toEqual([30, 60]);
-    const none = buildTimeline(plan({ foldCount: 0 }), REF_PRESETS, DEFAULT_BULK_TABLE, DOUGHS);
+    const none = build(plan({ foldCount: 0 }));
     expect(none.tracks[0]!.folds).toEqual([]);
     expect(none.foldCount).toBe(0);
   });
@@ -265,17 +257,12 @@ describe("timeline", () => {
   });
 
   it("never schedules a fold after bulk ends", () => {
-    const t = buildTimeline(
-      plan({ foldCount: 8, timelineOverrides: { bulk: 100 } }),
-      REF_PRESETS,
-      DEFAULT_BULK_TABLE,
-      DOUGHS,
-    );
+    const t = build(plan({ foldCount: 8, timelineOverrides: { bulk: 100 } }));
     expect(t.tracks[0]!.folds).toHaveLength(3);
   });
 
   it("gives every selected preset one lane with a bake window", () => {
-    const t = buildTimeline(plan(), REF_PRESETS, DEFAULT_BULK_TABLE, DOUGHS);
+    const t = build(plan());
     expect(t.lanes.map((l) => l.presetId)).toEqual(["roll", "loaf", "pizza"]);
     const pizza = t.lanes[2]!;
     expect(pizza.proof).toBe("cold");
@@ -286,7 +273,7 @@ describe("timeline", () => {
   });
 
   it("keeps the base dough alone on tracks when no line uses a library dough", () => {
-    const t = buildTimeline(plan(), REF_PRESETS, DEFAULT_BULK_TABLE, DOUGHS);
+    const t = build(plan());
     expect(t.tracks.map((tr) => [tr.doughId, tr.method])).toEqual([[LEAN_DOUGH_ID, "base"]]);
     expect(t.tracks[0]!.bulk.doughFactor).toBe(1);
     expect(t.end).toEqual(t.lanes[2]!.steps[2]!.end);
@@ -297,27 +284,26 @@ describe("timeline", () => {
     const presets = REF_PRESETS.map((p) =>
       p.id === "loaf" ? { ...p, proofMinutes: [60, 90] as [number, number] } : p,
     );
-    const t = buildTimeline(
+    const t = build(
       plan({
         items: [
           { presetId: "roll", count: 4 },
           { presetId: "loaf", count: 1 },
         ],
       }),
-      presets,
-      DEFAULT_BULK_TABLE,
       DOUGHS,
+      presets,
     );
     expect(t.ovenWarnings).toHaveLength(1);
     expect(t.ovenWarnings[0]).toMatch(/Suggested order: Roll .*, then Loaf/);
-    const clean = buildTimeline(plan(), REF_PRESETS, DEFAULT_BULK_TABLE, DOUGHS);
+    const clean = build(plan());
     expect(clean.ovenWarnings).toEqual([]);
   });
 });
 
 describe("§5 multi-dough timeline", () => {
   const refTimeline = (over: Partial<Plan>, doughs: Dough[] = DOUGHS) =>
-    buildTimeline(plan({ settings: REF, ...over }), REF_PRESETS, DEFAULT_BULK_TABLE, doughs);
+    build(plan({ settings: REF, ...over }), doughs);
 
   /** Example A: loaf ×1 lean and loaf ×1 pinned at 600 g on jalapeno-cheddar (starter mode, 250 g). */
   const EXAMPLE_A: ItemSelection[] = [
@@ -456,12 +442,13 @@ describe("§5 multi-dough timeline", () => {
    *     bulk start); divide@soft-bun 14:30; bench@soft-bun 14:45–15:10
    *   lane roll@soft-bun shapes at 15:10 and bakes at 190 °C without steam (the dough's bake)
    *   on sweet-bun (B2, factor 1.15) its bulk runs 345 min, 09:30–15:15
-   * Worked timeline B3 (loaf ×1 at 800 g on soft-sandwich with tangzhong 5 % at 1:5):
-   *   no feed, no autolyse: tangzhong@soft-sandwich 09:00–09:45 is steps[0]; mix 09:45–09:55;
-   *     mix@soft-sandwich 09:55–10:15; bulk@soft-sandwich 10:15–15:15 (300 min)
+   * Worked timeline B3 (loaf ×1 at 800 g on soft-sandwich with tangzhong 5 % at 1:5). Nothing is
+   * on lean or a split, so there is no main mix (the wave-2 rule; §5 still shows one at 09:45):
+   *   no feed, no autolyse: tangzhong@soft-sandwich 09:00–09:45 is steps[0];
+   *     mix@soft-sandwich 09:45–10:05; bulk@soft-sandwich 10:05–15:05 (300 min)
    *   the tangzhong note: "… cook 22 g flour with 108 g water …"; the mix@soft-sandwich note
    *     opens "Cooled tangzhong in with the milk and water,"
-   *   feedStarter on: tangzhong@soft-sandwich 09:00–09:15, feed 09:15–15:15, mix 15:15–15:25
+   *   feedStarter on: tangzhong@soft-sandwich 09:00–09:15, feed 09:15–15:15, mix@soft-sandwich 15:15
    */
   it("G: a separate dough runs its own mix, bulk and divide; a tangzhong opens the day", () => {
     const bunItems = exampleB;
@@ -512,19 +499,20 @@ describe("§5 multi-dough timeline", () => {
     expect(tz && run(tz)).toEqual(["tangzhong@soft-sandwich", 0, 45]);
     expect(tz?.note).toContain("22 g flour");
     expect(tz?.note).toContain("108 g water");
-    expect(at(stepOf(b3, "mix")?.start)).toBe(at(tz?.end));
+    // No lean or split line, so no main mix: the sandwich mix follows the paste directly.
+    expect(stepOf(b3, "mix")).toBeUndefined();
     const sandwichMix = stepOf(b3, "mix@soft-sandwich");
     expect(sandwichMix?.note).toMatch(/^Cooled tangzhong/);
-    expect(at(sandwichMix?.start)).toBe(55);
+    expect(at(sandwichMix?.start)).toBe(at(tz?.end));
     const sandwichBulk = stepOf(b3, "bulk@soft-sandwich");
-    expect([at(sandwichBulk?.start), sandwichBulk?.minutes]).toEqual([75, 300]);
+    expect([at(sandwichBulk?.start), sandwichBulk?.minutes]).toEqual([65, 300]);
 
     const fed = refTimeline({ mode: "items", items: tzItems, feedStarter: true }, tzDoughs);
-    expect(fed.steps.slice(0, 3).map(run)).toEqual([
+    expect(fed.steps.map(run)).toEqual([
       ["tangzhong@soft-sandwich", 0, 15],
       ["feed", 15, 360],
-      ["mix", 375, 10],
     ]);
+    expect(at(stepOf(fed, "mix@soft-sandwich")?.start)).toBe(375);
   });
 
   it("writes the enriched mix routine and the dough's bake (§5, decisions 12 and 13)", () => {
@@ -556,48 +544,53 @@ describe("§5 multi-dough timeline", () => {
 
   it("opens worked timeline B3 with the tangzhong, with and without a feed (§5)", () => {
     const b3 = refTimeline({ mode: "items", items: EXAMPLE_B3 }, TZ_DOUGHS);
-    expect(b3.steps.map(run)).toEqual([
-      ["tangzhong@soft-sandwich", 0, 45],
-      ["mix", 45, 10],
-    ]);
+    // Nothing is on lean or a split: no main mix and no base track.
+    expect(b3.steps.map(run)).toEqual([["tangzhong@soft-sandwich", 0, 45]]);
+    expect(b3.tracks.map((tr) => tr.doughId)).toEqual(["soft-sandwich"]);
     expect(trackOf(b3, "soft-sandwich")?.steps.map(run)).toEqual([
-      ["mix@soft-sandwich", 55, 20],
-      ["bulk@soft-sandwich", 75, 300],
-      ["divide@soft-sandwich", 375, 15],
-      ["bench@soft-sandwich", 390, 25],
+      ["mix@soft-sandwich", 45, 20],
+      ["bulk@soft-sandwich", 65, 300],
+      ["divide@soft-sandwich", 365, 15],
+      ["bench@soft-sandwich", 380, 25],
     ]);
     expect(b3.steps[0]?.label).toBe("Cook tangzhong");
     expect(b3.steps[0]?.note).toBe(
-      "Tangzhong for Soft sandwich dough: cook 22 g flour with 108 g water, stirring, to 65 °C, a thick paste that holds a line. Cool to room temperature before it goes in. Made the day before and kept in the fridge is fine: bring it back to room temperature.",
+      "Tangzhong for Soft sandwich dough: cook 22 g flour with 108 g water, stirring, to 65 °C, a thick paste that holds a line. Cool to room temperature before it goes in. Made the day before and kept in the fridge is fine: bring it back to room temperature. If it waits more than about two hours (it will while the starter feeds), keep it in the fridge and bring it back to room temperature before the mix.",
     );
     expect(stepOf(b3, "mix@soft-sandwich")?.note).toMatch(
       /^Cooled tangzhong in with the milk and water, then the starter, flour and salt: knead to a windowpane\. Butter in pieces over 5–8 min\./,
     );
     // The loaf proofs and bakes from its own dough's bench rest, at the dough's 190 °C.
     expect(laneOf(b3, "loaf@soft-sandwich")?.steps.map(run)).toEqual([
-      ["shape:loaf@soft-sandwich", 415, 10],
-      ["proof:loaf@soft-sandwich", 425, 90],
-      ["bake:loaf@soft-sandwich", 515, 45],
+      ["shape:loaf@soft-sandwich", 405, 10],
+      ["proof:loaf@soft-sandwich", 415, 90],
+      ["bake:loaf@soft-sandwich", 505, 45],
     ]);
     expect(stepOf(b3, "bake:loaf@soft-sandwich")?.note).toBe(
       "190 °C, 40–45 min, wash: none under a lid; egg wash if open",
     );
-    expect(at(b3.end)).toBe(560);
+    expect(at(b3.end)).toBe(550);
 
     const fed = refTimeline({ mode: "items", items: EXAMPLE_B3, feedStarter: true }, TZ_DOUGHS);
     expect(fed.steps.map(run)).toEqual([
       ["tangzhong@soft-sandwich", 0, 15],
       ["feed", 15, 360],
-      ["mix", 375, 10],
     ]);
-    expect(at(stepOf(fed, "mix@soft-sandwich")?.start)).toBe(385);
-    // An autolyse also gives the paste time to cool: 15 min, then the autolyse.
-    const rested = refTimeline({ mode: "items", items: EXAMPLE_B3, autolyse: true }, TZ_DOUGHS);
+    expect(at(stepOf(fed, "mix@soft-sandwich")?.start)).toBe(375);
+    // With no main mix there is nothing to autolyse, so nothing to cool the paste during.
+    const alone = refTimeline({ mode: "items", items: EXAMPLE_B3, autolyse: true }, TZ_DOUGHS);
+    expect(alone.steps.map(run)).toEqual([["tangzhong@soft-sandwich", 0, 45]]);
+    // A lean loaf brings the main mix back, and its autolyse gives the paste time to cool.
+    const rested = refTimeline(
+      { mode: "items", items: [...EXAMPLE_B3, { presetId: "loaf", count: 1 }], autolyse: true },
+      TZ_DOUGHS,
+    );
     expect(rested.steps.map(run)).toEqual([
       ["tangzhong@soft-sandwich", 0, 15],
       ["autolyse", 15, 45],
       ["mix", 60, 10],
     ]);
+    expect(at(stepOf(rested, "mix@soft-sandwich")?.start)).toBe(70);
     // The step is the dough's own: an override on it moves everything after it.
     const slow = refTimeline(
       {
@@ -607,7 +600,62 @@ describe("§5 multi-dough timeline", () => {
       },
       TZ_DOUGHS,
     );
-    expect(at(stepOf(slow, "mix@soft-sandwich")?.start)).toBe(70);
+    expect(at(stepOf(slow, "mix@soft-sandwich")?.start)).toBe(60);
+  });
+
+  it("leaves out the main mix when nothing is on it (items mode, separate doughs only)", () => {
+    const items = [{ presetId: "roll", count: 8, weightOverride: 120, doughId: "soft-bun" }];
+    const t = refTimeline({ mode: "items", items });
+    expect(t.steps.map((s) => s.id)).toEqual([]);
+    expect(t.tracks.map((tr) => tr.doughId)).toEqual(["soft-bun"]);
+    expect(trackOf(t, "soft-bun")?.steps.map(run)).toEqual([
+      ["mix@soft-bun", 0, 20],
+      ["bulk@soft-bun", 20, 300],
+      ["divide@soft-bun", 320, 15],
+      ["bench@soft-bun", 335, 25],
+    ]);
+    expect(at(laneOf(t, "roll@soft-bun")?.steps[0]?.start)).toBe(360);
+    const fed = refTimeline({ mode: "items", items, feedStarter: true });
+    expect(fed.steps.map(run)).toEqual([["feed", 0, 360]]);
+    expect(at(stepOf(fed, "mix@soft-bun")?.start)).toBe(360);
+    // The autolyse belongs to the main mix: with none, there is none.
+    expect(refTimeline({ mode: "items", items, autolyse: true }).steps).toEqual([]);
+    // Starter mode always keeps the main mix: the flour the buns leave is lean dough.
+    expect(refTimeline({ items }).steps.map((s) => s.id)).toEqual(["mix"]);
+    // Nothing planned at all: nothing to mix, nothing to time.
+    const empty = refTimeline({ mode: "items", items: [] });
+    expect([empty.steps, empty.tracks, empty.lanes, at(empty.end)]).toEqual([[], [], [], 0]);
+  });
+
+  it("quotes computePlan's grams, never its own: the split portion and the tangzhong lines", () => {
+    const pA = plan({ settings: REF, items: EXAMPLE_A });
+    const rA = computePlan(pA, REF_PRESETS, DOUGHS);
+    const jal = rA.doughs.find((d) => d.doughId === "jalapeno-cheddar")!;
+    const splitNote = (r: BatchResult) =>
+      stepOf(
+        buildTimeline(pA, REF_PRESETS, DEFAULT_BULK_TABLE, DOUGHS, r),
+        "split@jalapeno-cheddar",
+      )?.note;
+    expect(splitNote(rA)).toMatch(
+      new RegExp(`^Take ${Math.round(jal.portion!)} g of dough for Jalapeño cheddar\\.`),
+    );
+    // Whatever the result says is what the note says.
+    const doctored: BatchResult = {
+      ...rA,
+      doughs: rA.doughs.map((d) => (d === jal ? { ...d, portion: 777.4 } : d)),
+    };
+    expect(splitNote(doctored)).toMatch(/^Take 777 g of dough/);
+
+    const p3 = plan({ settings: REF, mode: "items", items: EXAMPLE_B3 });
+    const r3 = computePlan(p3, REF_PRESETS, TZ_DOUGHS);
+    const lines = [...r3.doughs, ...r3.mixes].flatMap((x) => x.additions);
+    const flour = lines.find((a) => a.kind === "tangzhong-flour")!;
+    const liquid = lines.find((a) => a.kind === "tangzhong-liquid")!;
+    const note = buildTimeline(p3, REF_PRESETS, DEFAULT_BULK_TABLE, TZ_DOUGHS, r3).steps[0]?.note;
+    expect(note).toContain(
+      `cook ${Math.round(flour.grams)} g flour with ${Math.round(liquid.grams)} g water,`,
+    );
+    expect([Math.round(flour.grams), Math.round(liquid.grams)]).toEqual([22, 108]);
   });
 
   it("takes the tangzhong liquid from the milk when the milk covers it", () => {
@@ -625,15 +673,16 @@ describe("§5 multi-dough timeline", () => {
     expect(stepOf(t, "mix@soft-sandwich")?.note).toMatch(
       /^Cooled tangzhong in with the milk and water, then/,
     );
-    // No milk covers nothing, even a paste that wants no liquid: it reads water, as calc has it.
+    // A paste that wants no liquid is no tangzhong: computePlan writes no lines, so no step.
     const dry = editDough("buttered", {
       method: "separate",
       tangzhong: { flourPct: 0.05, ratio: 0 },
     });
-    expect(
-      refTimeline({ items: [{ presetId: "loaf", count: 1, doughId: "buttered" }] }, dry).steps[0]
-        ?.note,
-    ).toMatch(/ water, stirring/);
+    const noPaste = refTimeline(
+      { items: [{ presetId: "loaf", count: 1, doughId: "buttered" }] },
+      dry,
+    );
+    expect(noPaste.steps.map((s) => s.id)).toEqual(["mix"]);
     // A forced split cannot hold a tangzhong: no step for it.
     const forced = editDough("jalapeno-cheddar", { tangzhong: { flourPct: 0.05, ratio: 5 } });
     expect(refTimeline({ items: EXAMPLE_A }, forced).steps.map((s) => s.id)).toEqual(["mix"]);
@@ -788,7 +837,7 @@ describe("§5 multi-dough timeline", () => {
     ]);
     expect(laneOf(t, "loaf@gone")?.bakeTempC).toBe(250);
     expect(t.ovenWarnings[0]).toMatch(
-      /^Oven clash: Loaf, Loaf \(Lean \(dough gone not found\)\) need the oven/,
+      /^Oven clash: Loaf, Loaf \(dough gone not found\) need the oven/,
     );
   });
 
@@ -807,19 +856,26 @@ describe("§5 multi-dough timeline", () => {
     );
   });
 
-  it("names a lane with its dough unless it is the lean line", () => {
-    const loaf = { presetId: "loaf", name: "Loaf" };
-    expect(laneLabel({ ...loaf, key: "loaf", doughName: "Lean" })).toBe("Loaf");
-    expect(
-      laneLabel({ ...loaf, key: "loaf@jalapeno-cheddar", doughName: "Jalapeño cheddar" }),
-    ).toBe("Loaf (Jalapeño cheddar)");
+  it("labels each lane as messages name its line: lean, a dough, a missing dough", () => {
+    const t = refTimeline({
+      items: [
+        { presetId: "loaf", count: 1 },
+        { presetId: "loaf", count: 1, doughId: "jalapeno-cheddar" },
+        { presetId: "loaf", count: 1, doughId: "gone" },
+      ],
+    });
+    expect(t.lanes.map((l) => [l.key, l.label])).toEqual([
+      ["loaf", "Loaf"],
+      ["loaf@jalapeno-cheddar", "Loaf (Jalapeño cheddar)"],
+      ["loaf@gone", "Loaf (dough gone not found)"],
+    ]);
   });
 });
 
 // deprecated aliases: WP-G deletes
 describe("deprecated aliases of tracks[0] (WP-G deletes)", () => {
   it("equal tracks[0].folds and tracks[0].bulk", () => {
-    const t = buildTimeline(plan({ foldCount: 3 }), REF_PRESETS, DEFAULT_BULK_TABLE, DOUGHS);
+    const t = build(plan({ foldCount: 3 }));
     expect(t.folds).toBe(t.tracks[0]!.folds);
     expect(t.bulk).toBe(t.tracks[0]!.bulk);
     expect(t.folds.map(at)).toEqual([40, 70, 100]);
@@ -830,6 +886,13 @@ describe("deprecated aliases of tracks[0] (WP-G deletes)", () => {
       usedMinutes: 300,
       doughFactor: 1,
     });
+    // With no main mix they follow the first track present; with no track at all, nothing.
+    const items = [{ presetId: "roll", count: 8, weightOverride: 120, doughId: "soft-bun" }];
+    const buns = build(plan({ settings: REF, mode: "items", items }));
+    expect(buns.folds).toBe(buns.tracks[0]!.folds);
+    expect(buns.bulk).toBe(buns.tracks[0]!.bulk);
+    const empty = build(plan({ settings: REF, mode: "items", items: [] }));
+    expect([empty.folds, empty.bulk.usedMinutes]).toEqual([[], 0]);
   });
 });
 
@@ -840,7 +903,7 @@ describe("the all-lean plan does not move (pin H)", () => {
   const baseFolds = (t: Timeline): Date[] => t.tracks[0]?.folds ?? [];
 
   it("H: keeps today's step ids, times, folds and lane keys", () => {
-    const t = buildTimeline(plan(), REF_PRESETS, DEFAULT_BULK_TABLE, DOUGHS);
+    const t = build(plan());
     expect(baseRun(t)).toEqual([
       ["mix", 0, 10],
       ["bulk", 10, 300],
@@ -880,16 +943,13 @@ describe("the all-lean plan does not move (pin H)", () => {
     expect(t.ovenWarnings).toEqual([]);
 
     // Feed, autolyse, a stand mixer and saved overrides keep their ids and cascade as today.
-    const busy = buildTimeline(
+    const busy = build(
       plan({
         feedStarter: true,
         autolyse: true,
         standMixer: true,
         timelineOverrides: { bulk: 240, "proof:loaf": 120 },
       }),
-      REF_PRESETS,
-      DEFAULT_BULK_TABLE,
-      DOUGHS,
     );
     expect(baseRun(busy)).toEqual([
       ["feed", 0, 360],
