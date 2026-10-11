@@ -1,1 +1,44 @@
 /* The Division card (DivisionCard.tsx): R3 of PLAN-redesign.md; its print block is R7's. */
+
+/*
+ * The pieces, in the card and in kitchen mode (`Pieces` is both), so scoped to their own root. A
+ * styles.css rule of the same weight wins, as it loads later: kitchen mode's one column and
+ * bigger count, and every print protection.
+ */
+
+/* The first section as close under the card's header as the Ingredients card's beside it. */
+.division-pieces > .section:first-child {
+  margin-top: var(--sp-3);
+}
+/* A lone piece takes the row; two or more share it, at least 150 px each. */
+.division-pieces .pieces {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+/* The dough's tag heads its section at the head's size; a long name wraps, its dot on line one.
+   No margin of its own on the row, kitchen mode's for an h3 included. */
+.division-pieces .section > .head > .dough-tag {
+  align-items: baseline;
+  min-width: 0;
+  margin: 0;
+  white-space: normal;
+}
+.division-pieces .badge {
+  white-space: nowrap;
+}
+/* Screen only: print sets its own count size, and badges print as ink (R7). */
+@media screen {
+  /* The count on one line at the piece-count size; in a narrow piece it shrinks to fit. */
+  .division-pieces .piece .big {
+    font-size: var(--num-lg);
+    font-size: min(var(--num-lg), 20.5cqi);
+  }
+  /* "below min": --card on --danger is 6.4:1 in light and 6.5:1 in dark, where #fff is 2.4:1. */
+  .division-pieces .badge.bad {
+    color: var(--card);
+  }
+}
+
+/* The card's suggestions, under its pieces. */
+.division .suggestions {
+  margin-top: var(--sp-3);
+}

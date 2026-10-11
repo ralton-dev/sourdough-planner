@@ -1,1 +1,36 @@
 /* The Items card (ItemsCard.tsx): R3 of PLAN-redesign.md; its print block is R7's. */
+
+/*
+ * A row: what it is beside its count; then its dough and its weight each across the whole row, so
+ * a phone shows a dough's whole name. The first column may shrink below its longest word.
+ */
+.items .item-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.items .item-row .badge {
+  white-space: nowrap;
+}
+/* "dough not found": --card on --danger is 6.4:1 in light and 6.5:1 in dark, where #fff is 2.4:1. */
+.items .item-row .badge.bad {
+  color: var(--card);
+}
+/* The dough a row is on: a dot in its colour (decision 26), then the choice of dough or its name. */
+.items .dough-pick {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.items .dough-pick > select {
+  margin-top: 0;
+  min-width: 0;
+}
+/* Adding a line: the picker takes the row. */
+.items .add-item {
+  margin-top: var(--sp-3);
+}
+.items .add-item > select {
+  flex: 1;
+  min-width: 0;
+}

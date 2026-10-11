@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import {
   LEAN_DOUGH_ID,
   type Dough,
@@ -6,8 +6,10 @@ import {
   type Plan,
   type Preset,
 } from "../lib/types";
+import { computePlan } from "../lib/calc";
 import { effectiveMethod, findDough, lineKey, positive, resolveDoughId } from "../lib/doughs";
 import { lineLabel } from "../lib/format";
+import { doughColour } from "./DivisionCard";
 import { NumberField } from "./NumberField";
 import "./items.css";
 
@@ -34,6 +36,10 @@ type Row =
 export function ItemsCard({ plan, presets, doughs, onChange }: Props) {
   const [adding, setAdding] = useState("");
   const uid = useId();
+  // Decision 26: a row's dough wears the colour every other card gives it, which follows the
+  // doughs the plan computes to. This card is not handed that result, so it computes it as App does.
+  const result = useMemo(() => computePlan(plan, presets, doughs), [plan, presets, doughs]);
+  const starter = plan.mode === "starter";
   const setItems = (items: ItemSelection[]) => onChange({ ...plan, items });
   const update = (i: number, patch: Partial<ItemSelection>) =>
     setItems(plan.items.map((it, k) => (k === i ? { ...it, ...patch } : it)));
@@ -112,11 +118,11 @@ export function ItemsCard({ plan, presets, doughs, onChange }: Props) {
   };
 
   return (
-    <section className="card">
+    <section className="card items">
       <header>
         <h2>Items</h2>
         <span className="sub">
-          {plan.mode === "starter"
+          {starter
             ? "Flex items absorb the surplus. Set a weight to pin one."
             : "Each piece at its preset weight unless you set one."}
         </span>
@@ -128,7 +134,7 @@ export function ItemsCard({ plan, presets, doughs, onChange }: Props) {
             <div className="item-row" key={rowKey(`${row.it.presetId}-${i}`)}>
               <div>
                 <div className="title">Unknown preset</div>
-                <div className="muted small">This preset was deleted.</div>
+                <div className="note-planner">This preset was deleted.</div>
               </div>
               <button type="button" className="btn danger" onClick={() => remove(i)}>
                 Remove
@@ -155,45 +161,50 @@ export function ItemsCard({ plan, presets, doughs, onChange }: Props) {
         // Only when there is a choice: never without a library, unless a dough has gone and lean
         // is free to take the line back.
         const showSelect = options.length > 1;
-        let doughBadge: React.ReactNode = null;
-        if (!dough) {
-          doughBadge = <span className="badge bad">dough not found</span>;
-        } else if (doughId !== LEAN_DOUGH_ID) {
-          const how = effectiveMethod(dough) === "split" ? "split" : "separate mix";
-          doughBadge = (
-            <span className="badge">
-              {how}: {dough.name}
-            </span>
-          );
-        }
+        // How the dough is made, in a word: the select under it, or its tag, names it.
+        const how =
+          dough && doughId !== LEAN_DOUGH_ID
+            ? effectiveMethod(dough) === "split"
+              ? "split"
+              : "separate mix"
+            : undefined;
+        // A dough the library has lost computes as lean (decision 2): neutral, as the main dough.
+        const colour = dough ? (doughColour(result, doughId) ?? 0) : 0;
         return (
           <div className="item-row" key={rowKey(key)}>
             <div>
               <div className="title">
-                {p.icon} {p.name}{" "}
-                {flex ? (
-                  <span className="badge neutral">flex {p.flexPriority}</span>
-                ) : (
-                  <span className="badge neutral">fixed</span>
+                {p.icon} {p.name}
+                {/* Flex and fixed are how a starter's batch is shared out; in items mode every
+                    piece is made at its own weight. */}
+                {starter && (
+                  <>
+                    {" "}
+                    <span className="badge neutral">
+                      {flex ? `flex ${p.flexPriority}` : "fixed"}
+                    </span>
+                  </>
                 )}
-                {doughBadge && <> {doughBadge}</>}
+                {!dough ? (
+                  <>
+                    {" "}
+                    <span className="badge bad">dough not found</span>
+                  </>
+                ) : (
+                  how && (
+                    <>
+                      {" "}
+                      <span className="badge neutral">{how}</span>
+                    </>
+                  )
+                )}
               </div>
-              <div className="muted small">
-                {p.defaultWeight} g default · {p.minWeight}–{p.maxWeight} g
+              <div className="note-planner num">
+                <span className="nowrap">{p.defaultWeight} g default</span> ·{" "}
+                <span className="nowrap">
+                  {p.minWeight}–{p.maxWeight} g
+                </span>
               </div>
-              {showSelect && (
-                <select
-                  value={doughId}
-                  onChange={(e) => setDough(i, p, e.target.value)}
-                  aria-label={`Dough for ${label}`}
-                >
-                  {options.map((id) => (
-                    <option key={id} value={id}>
-                      {optionLabel(id)}
-                    </option>
-                  ))}
-                </select>
-              )}
             </div>
             <div className="row">
               <div className="stepper" aria-label={`${label} count`}>
@@ -223,6 +234,30 @@ export function ItemsCard({ plan, presets, doughs, onChange }: Props) {
                 </button>
               </div>
             </div>
+            {/* The dough by its dot, then the choice of dough; with no choice, its name, unless
+                that is the main dough, which needs no saying. */}
+            {showSelect ? (
+              <div className={`dough-pick dough-${colour}`}>
+                <span className="dough-tag" aria-hidden="true" />
+                <select
+                  value={doughId}
+                  onChange={(e) => setDough(i, p, e.target.value)}
+                  aria-label={`Dough for ${label}`}
+                >
+                  {options.map((id) => (
+                    <option key={id} value={id}>
+                      {optionLabel(id)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              doughId !== LEAN_DOUGH_ID && (
+                <div className={`dough-pick dough-${colour}`}>
+                  <span className="dough-tag">{optionLabel(doughId)}</span>
+                </div>
+              )
+            )}
             <div className="override">
               <NumberField
                 label="Weight each"
@@ -247,13 +282,12 @@ export function ItemsCard({ plan, presets, doughs, onChange }: Props) {
           </div>
         );
       })}
-      <div className="row" style={{ marginTop: 12 }}>
+      <div className="row add-item">
         <select
           value={adding}
           onChange={(e) => add(e.target.value)}
           aria-label="Add an item"
           disabled={addable.length === 0}
-          style={{ flex: 1, minWidth: 0 }}
         >
           <option value="">{addable.length === 0 ? "All presets added" : "Add an item…"}</option>
           {addable.map(({ p, doughId }) => {
@@ -270,7 +304,7 @@ export function ItemsCard({ plan, presets, doughs, onChange }: Props) {
         </select>
       </div>
       {showAddInsBox && (
-        <div style={{ marginTop: 10 }}>
+        <div className="card-footer">
           <label className="check">
             <input
               type="checkbox"
@@ -280,7 +314,7 @@ export function ItemsCard({ plan, presets, doughs, onChange }: Props) {
             />
             <span>Planned weights include add-ins</span>
           </label>
-          <p className="muted small" id={hintId}>
+          <p className="note-planner" id={hintId}>
             Ticked, a 600 g jalapeño loaf is 600 g finished with 506 g of dough in it. Unticked, it
             is 600 g of dough with the add-ins on top.
           </p>
