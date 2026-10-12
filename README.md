@@ -181,39 +181,76 @@ The research behind these choices, with its sources, is in
 
 ## Persistence
 
-Everything lives in the browser's localStorage, under `sourdough.v1.`: `presets`, `doughs`,
+The app renders from the browser's localStorage, under `sourdough.v1.`: `presets`, `doughs`,
 `plan` (the current one), `bulkTable`, `savedPlans` and `ui` (the half-gram-salt preference),
 and `seeded`, the default preset and dough ids this browser has already been given. That record
 is what lets a new default reach an existing browser once while a default you deleted stays
 deleted. An old default you never edited (the 70 g roll) is brought up to date in place; edits,
 order and your own presets and doughs are left alone. Saved plans refer to presets and doughs by
-id, so editing a dough changes every plan that uses it.
+id, so editing a dough changes every plan that uses it. Two more keys sit beside them: `sync`,
+when each of the six sections last changed in this browser and the server version it last saw,
+and `guide`, whether the walkthrough has run and which tips were dismissed. The Timeline card's
+In order / By dough choice (`sourdough.v1.timelineView`) stays per browser and never syncs: one
+device may want the list and another the tracks.
 
-The Presets page has JSON export and import to move between devices or back up. An export is
-version 2 and carries the dough library; a version-1 file, from before doughs, still imports,
-with the default doughs and its presets brought up to date. There is no server-side state.
+**Local only** (accounts off, or signed out): that is all there is. The Presets page has JSON
+export and import to move between devices or back up.
+
+**Signed in**: the same six sections also live on the server as one document per account, so
+every device you sign in on has them. localStorage is still what the app reads, so it works
+offline. On load (and when the tab comes back after a while) it pulls the account's copy and
+merges it section by section: whichever side changed a section more recently wins it whole, by
+the clocks of the devices that made the changes. Nothing is merged inside a section, so a plan
+edited on two devices within the same minute takes the later save. Each change is pushed 1.5 s
+after the last edit; if another device saved in between, the server refuses the stale push, and
+the app merges the server's copy in and pushes the merge, never its own stale copy. Offline,
+changes stay in the browser and are retried after 5 s, 30 s, 2 min, then every 5 min. The
+Backup card says which state it is in ("Signed in as …, synced 21:14.", "Offline, changes kept;
+will sync when back.", "Sign in again to keep syncing.") and, after a merge that moved something,
+what came from where.
+
+An export is version 3: the five sections of version 2 plus the settings (`ui`) and when each
+section last changed. Versions 1 (before doughs) and 2 still import; a version-1 file gets the
+default doughs and its presets brought up to date. An import replaces what it carries and counts
+as a change made now, so signed in it then reaches your other devices.
 
 ## Privacy
 
-Nothing a visitor enters leaves their browser. There are no accounts, cookies or analytics,
-and the server keeps no state. The public instance sits behind Cloudflare, which sees
-visitor IP addresses as any web host does. The footer says the same in-app.
+**Accounts off** (the default, and the public instance unless it says otherwise): nothing a
+visitor enters leaves their browser. The page makes one request beyond its own files, `GET
+/api/me`, to ask whether accounts are on (cached for an hour); the answer carries nothing about
+the visitor. No cookies, no analytics, and the server keeps no state.
+
+**Accounts on, signed out**: the same, plus the sign-in link. **Signed in**: the server keeps,
+per account, the issuer and subject that identify you to your sign-in service, the email and
+name it gives (both optional), when the account was created and last seen, your sessions (an id,
+created, expires, last seen), and one document: your presets, doughs, bulk table, saved plans,
+current plan and settings, with when each last changed. One cookie, `sdp_session` (HttpOnly,
+SameSite=Lax, Secure on https, 30 days sliding), holds the session id; a short-lived
+`sdp_login` cookie carries the sign-in in progress. ID and access tokens are used once at sign-in
+and never stored or sent to the browser. Nothing else is collected.
+
+The public instance sits behind Cloudflare, which sees visitor IP addresses as any web host
+does. The footer says the same in-app, in whichever mode it is in.
 
 ## Development
 
 ```
 npm ci
 npm run dev        # vite on :5173
-npm test           # vitest: the src/lib maths, storage and the server
+npm test           # vitest: the src/lib maths, storage, sync logic and the server
 npm run lint && npm run typecheck && npm run format
 npm run build && npm start   # serve dist/ from the production server on :8080
 ```
 
 ## Running it
 
-The image builds the SPA and serves it from `server/index.mjs`, a dependency-free Node
-static server. It runs as uid 1000 with a read-only root filesystem and no capabilities,
-writes nothing to disk, and needs no writable `$HOME`.
+The image builds the SPA and serves it from `server/index.mjs`, a small Node server whose only
+dependency is `openid-client`, used when accounts are on. It runs as uid 1000 with a read-only
+root filesystem and no capabilities, and needs no writable `$HOME`. With accounts off it writes
+nothing to disk; with accounts on it writes one SQLite file, `$DATA_DIR/planner.sqlite` (Node's
+built-in `node:sqlite`, WAL mode), so mount a volume there (`/data` in a cluster, with
+`DATA_DIR=/data`).
 
 | Variable       | Default                  | Purpose                                                                                     |
 | -------------- | ------------------------ | ------------------------------------------------------------------------------------------- |
@@ -223,25 +260,71 @@ writes nothing to disk, and needs no writable `$HOME`.
 | `STATIC_DIR`   | `/app/dist` in the image | Where the built bundle is.                                                                  |
 | `LOG_REQUESTS` | unset                    | Exactly `"true"` logs one JSON line per request.                                            |
 
-None are secret. None are required.
+None of those are secret or required. Accounts take six more, **all or none**:
 
-| Path            | Meaning                                                                            |
-| --------------- | ---------------------------------------------------------------------------------- |
-| `GET /healthz`  | Liveness. `200 {"status":"ok","version":…}` whenever the process answers.          |
-| `GET /readyz`   | Readiness. `200` once `index.html` is readable from `STATIC_DIR`; `503` otherwise. |
-| `GET /assets/*` | Hashed bundle files, `Cache-Control: public, max-age=31536000, immutable`.         |
-| anything else   | SPA fallback to `index.html`, `no-cache`. Only `GET` and `HEAD`; others get `405`. |
+| Variable             | Default | Purpose                                                                                    |
+| -------------------- | ------- | ------------------------------------------------------------------------------------------ |
+| `DATA_DIR`           | unset   | Directory for `planner.sqlite`. Must be writable.                                          |
+| `APP_URL`            | unset   | The public origin, e.g. `https://sourdough.example.com`; https makes the cookie Secure.    |
+| `OIDC_ISSUER`        | unset   | The issuer's discovery base (Authentik: `https://auth.example.com/application/o/<slug>/`). |
+| `OIDC_CLIENT_ID`     | unset   | The OAuth2 client (confidential; PKCE is used as well).                                    |
+| `OIDC_CLIENT_SECRET` | unset   | Its secret.                                                                                |
+| `SESSION_SECRET`     | unset   | At least 32 bytes; signs the session cookie.                                               |
+| `SESSION_DAYS`       | `30`    | Sliding session lifetime, a positive integer.                                              |
+
+Set none of the six and accounts are off: today's local-only app, no database opened. Set some
+but not all and the process exits naming the missing ones; there is no half-configured mode. To
+switch accounts off without unsetting the rest, set `OIDC_ISSUER=""`: the data stays where it
+is for when you turn them back on. The issuer must be https; plain http is accepted only on
+`localhost` or `127.0.0.1` (for local testing), anywhere else the process refuses to start. At
+the issuer, register `<APP_URL>/auth/callback` as the redirect URI and `<APP_URL>/` as the
+post-logout redirect, with the scopes `openid profile email`.
+
+| Path                 | Meaning                                                                                                     |
+| -------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `GET /healthz`       | Liveness. `200 {"status":"ok","version":…}` whenever the process answers.                                   |
+| `GET /readyz`        | Readiness. `200` once `index.html` is readable and, with accounts on, the database opened; `503` otherwise. |
+| `GET /api/me`        | `{ enabled: false }` (cached an hour), or `{ enabled: true }` with `user: { name, email }` when signed in.  |
+| `GET /auth/login`    | Accounts on: starts the sign-in (redirect to the issuer). `/auth/callback` finishes it.                     |
+| `POST /auth/logout`  | Ends the session, then the issuer's end-session page when it has one.                                       |
+| `GET/PUT /api/state` | The signed-in account's document, with a version; a stale `PUT` gets `409` and the current copy.            |
+| `GET /assets/*`      | Hashed bundle files, `Cache-Control: public, max-age=31536000, immutable`.                                  |
+| anything else        | SPA fallback to `index.html`, `no-cache`. Only `GET` and `HEAD`; others get `405`.                          |
 
 Neither health endpoint requires auth.
+
+### Accounts locally
+
+A fake OIDC issuer for testing ships in the repo (not in the image). In one terminal:
+
+```
+node server/fake-issuer.mjs        # on 127.0.0.1:9400; FAKE_ISSUER_DENY=1 makes it refuse
+```
+
+It prints the environment to start the app against it. In another, after `npm run build`:
+
+```
+DATA_DIR=/tmp/sdp-local-data APP_URL=http://127.0.0.1:8080 \
+  OIDC_ISSUER=http://127.0.0.1:9400/application/o/sdp/ \
+  OIDC_CLIENT_ID=sdp-local OIDC_CLIENT_SECRET=sdp-local-secret \
+  SESSION_SECRET=insecure-local-only-session-secret-0123456789 \
+  node server/index.mjs
+```
+
+Open `http://127.0.0.1:8080`, not `localhost`: the cookie belongs to `APP_URL`'s host. Every
+sign-in is the same user, "Test Baker", so two browser profiles (or a normal and a private
+window) signed in are two devices of one person.
 
 ### Network
 
 - **Inbound:** TCP `PORT` (8080) from the ingress. Plain HTTP; TLS terminates upstream.
-- **Outbound:** none. No APIs, no fonts, no CDN, no telemetry, no update checks. The bundle
-  is self-contained and the server makes no outbound connections. The footer links to GitHub
-  and Ko-fi are plain anchors the visitor chooses to follow; the app never requests either.
-- No WebSockets. No absolute URLs are generated, so `X-Forwarded-Proto` is not consulted.
-  No cookies are set. Served from the domain root with root-relative asset URLs.
+- **Outbound:** none with accounts off. With accounts on, the server reaches `OIDC_ISSUER`
+  (discovery, the token endpoint) and nothing else. No APIs, no fonts, no CDN, no telemetry, no
+  update checks; the bundle is self-contained. The footer links to GitHub and Ko-fi are plain
+  anchors the visitor chooses to follow; the app never requests either.
+- No WebSockets. Redirect URLs are built from `APP_URL`, so `X-Forwarded-Proto` is not
+  consulted. Cookies only with accounts on (see [Privacy](#privacy)). Served from the domain root
+  with root-relative asset URLs.
 
 ### Image
 
