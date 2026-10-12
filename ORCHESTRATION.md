@@ -1,7 +1,7 @@
 # Orchestration notes for sourdough-planner
 
 Project facts an orchestrator or a cold agent needs that the code does not say. Written during
-the doughs plan (`PLAN-doughs.md`, 2026-10-11); keep it current when they change.
+the doughs plan (2026-10-11); keep it current when they change.
 
 ## Verification gate
 
@@ -63,7 +63,7 @@ has the details.
 
 ## Accounts locally
 
-Accounts are off unless all six account variables are set (`PLAN-accounts.md` §3). To walk them,
+Accounts are off unless all six account variables are set (README, "Running it"). To walk them,
 start the test-only issuer, which prints the env block to start the app against it:
 
 ```
@@ -96,10 +96,11 @@ DATA_DIR=$TMPDIR/sdp-local-data APP_URL=http://127.0.0.1:8080 \
   `git add -A`, `git stash`, `git checkout --` or `git restore` while other agents share the tree.
 - Message: `type(scope): summary` with a short body saying why (`feat(lib)`, `fix(app)`,
   `docs(plan)`, `ci(docker)`); one commit per package, plus follow-ups as their own commits.
-- Plans live at the repo root (`PLAN-<idea>.md`); research and the deployment contract
-  (`docs/deployment.md`) under `docs/`. Decisions are numbered continuously: `PLAN-doughs.md`
-  ended at 23, `PLAN-redesign.md` at 36, `PLAN-accounts.md` ends at 52; the next plan starts
-  at 53.
+- Plan documents are kept out of this public repo (they describe a private deployment); Ben
+  holds them in OpenViking under `sourdough-planner/plans/`. Research stays under `docs/`.
+  Decisions are numbered continuously across plans: the doughs plan ended at 23, the redesign
+  at 36, accounts at 52; the next plan starts at 53. Code comments cite them as
+  "PLAN-<name> decision N".
 
 ## Code conventions that bite
 
