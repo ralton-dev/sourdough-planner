@@ -8,3 +8,6 @@ docs
 .env
 .env.*.local
 .DS_Store
+# Test-only server files (PLAN-accounts P2); server/migrations/ ships.
+server/*.test.mjs
+server/fake-issuer.mjs
