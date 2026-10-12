@@ -89,13 +89,16 @@ export function tourSteps(): DriveStep[] {
 export function startTour(): boolean {
   const steps = tourSteps();
   if (steps.length === 0) return false;
+  // Seen from the moment it starts: driver.js animates each step for 400 ms, and a close inside
+  // that window can skip onDestroyed's write, which ran the tour again on the next load.
+  saveGuide({ ...loadGuide(), seen: true });
   runGuide(steps, {
     showProgress: true,
     progressText: "{{current}} of {{total}}",
     nextBtnText: "Next",
     prevBtnText: "Back",
     doneBtnText: "Done",
-    // Finished, closed by the ×, the dim or Escape: seen either way.
+    // Finished, closed by the ×, the dim or Escape: seen either way (recorded again here).
     onDestroyed: () => {
       saveGuide({ ...loadGuide(), seen: true });
       active = undefined;
