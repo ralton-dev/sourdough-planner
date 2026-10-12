@@ -4,6 +4,8 @@ import { DEFAULT_PRESETS, clonePresets } from "../lib/presets";
 import { newId } from "../lib/ids";
 import { NumberField } from "./NumberField";
 import { DoughsCard, doughTitle } from "./DoughsCard";
+import type { AccountMode } from "./Footer";
+import { HintButton } from "../guide/hints";
 import "./doughs.css";
 
 interface Props {
@@ -14,7 +16,21 @@ interface Props {
   /** The dough library and its setter, for the Doughs card and each preset's Dough select. */
   doughs: Dough[];
   onDoughs: (next: Dough[]) => void;
+  /** Accounts off, signed out or signed in: what the card says about where things live. */
+  account?: AccountMode;
+  /** The sync status sentence (§4); "" with accounts off. */
+  syncLine?: string;
+  /** The last merge's sentence, until dismissed. */
+  syncNotice?: string;
+  onDismissNotice?: () => void;
 }
+
+/** Where the card says everything lives, by mode. */
+const WHERE: Record<AccountMode, string> = {
+  off: "Everything lives in this browser. Export before clearing site data or moving to another device.",
+  out: "Everything lives in this browser until you sign in. Export before clearing site data.",
+  in: "Kept on this server under your account and in this browser, so every device you sign in on has it. Export for a copy of your own.",
+};
 
 const blank = (): Preset => ({
   id: newId("preset"),
@@ -30,7 +46,18 @@ const blank = (): Preset => ({
   note: "",
 });
 
-export function PresetsPage({ presets, onChange, onExport, onImport, doughs, onDoughs }: Props) {
+export function PresetsPage({
+  presets,
+  onChange,
+  onExport,
+  onImport,
+  doughs,
+  onDoughs,
+  account = "off",
+  syncLine = "",
+  syncNotice = "",
+  onDismissNotice,
+}: Props) {
   const [open, setOpen] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   // The lean dough is the Batch settings, never a library entry (decision 1).
@@ -148,14 +175,41 @@ export function PresetsPage({ presets, onChange, onExport, onImport, doughs, onD
 
       <DoughsCard doughs={library} presets={presets} onChange={onDoughs} />
 
-      <section className="card">
+      <section className="card" data-guide="backup">
         <header>
           <h2>Backup</h2>
+          <HintButton card="backup" />
           <span className="sub">
-            Presets, doughs, bulk table, saved plans and the current plan as JSON.
+            Presets, doughs, bulk table, saved plans, settings and the current plan as JSON.
           </span>
         </header>
         <div className="stack">
+          {account !== "off" && syncLine && (
+            <p className={`sync-line sync-line-${account}`} role="status">
+              {account === "out" ? (
+                <>
+                  Local only. <a href="/auth/login">Sign in</a> to keep this on every device.
+                </>
+              ) : (
+                syncLine
+              )}
+            </p>
+          )}
+          {account === "in" && syncNotice && (
+            <p className="sync-notice" role="status">
+              <span>{syncNotice}</span>
+              {onDismissNotice && (
+                <button
+                  type="button"
+                  className="btn ghost"
+                  aria-label="Dismiss"
+                  onClick={onDismissNotice}
+                >
+                  ×
+                </button>
+              )}
+            </p>
+          )}
           <div className="row">
             <button type="button" className="btn" onClick={onExport}>
               Export JSON
@@ -176,10 +230,7 @@ export function PresetsPage({ presets, onChange, onExport, onImport, doughs, onD
               }}
             />
           </div>
-          <p className="note-planner">
-            Everything lives in this browser. Export before clearing site data or moving to another
-            device.
-          </p>
+          <p className="note-planner">{WHERE[account]}</p>
         </div>
       </section>
     </div>

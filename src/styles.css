@@ -208,6 +208,192 @@ textarea {
   box-shadow: var(--shadow);
 }
 
+/*
+ * The account (AccountMenu): beside the nav, dressed like it. Narrow, the nav wraps under the
+ * brand, so the account takes the brand's row on the right. Not printed (.no-print, and the top
+ * bar is hidden on paper anyway).
+ */
+.topbar .nav {
+  margin-left: auto;
+}
+.account {
+  position: relative;
+}
+.account > summary,
+.account-signin {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 4px 14px 4px 12px;
+  border-radius: 12px;
+  background: var(--card-2);
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+.account > summary::before,
+.account[open] > summary::before {
+  content: none;
+}
+.account > summary::-webkit-details-marker {
+  display: none;
+}
+.account-signin {
+  color: var(--accent);
+}
+.account > summary:hover,
+.account-signin:hover,
+.account[open] > summary {
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+.account-name {
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-initial {
+  display: none;
+}
+.account-caret::after {
+  content: "▾";
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+/* Where sync stands, as a colour; the words are the tooltip and the panel's first line. */
+.sync-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 0 0 2px var(--card);
+}
+.sync-synced {
+  background: var(--ok);
+}
+.sync-syncing {
+  background: var(--accent);
+  animation: sync-pulse 1.2s ease-in-out infinite alternate;
+}
+/* Hollow: not connected (the warn colour is dark in the light scheme, so the shape carries it). */
+.sync-offline {
+  background: transparent;
+  box-shadow:
+    inset 0 0 0 2px var(--warn-ink),
+    0 0 0 2px var(--card);
+}
+.sync-signin {
+  background: var(--danger);
+}
+@keyframes sync-pulse {
+  to {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sync-syncing {
+    animation: none;
+  }
+}
+.account-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  width: max-content;
+  max-width: min(300px, calc(100vw - 32px));
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.account-who {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.account-status {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.account-panel form,
+.account-panel .btn {
+  display: grid;
+  margin: 0;
+  text-align: center;
+  text-decoration: none;
+}
+@media (max-width: 640px) {
+  .account {
+    order: 1;
+    margin-left: auto;
+  }
+  .topbar .nav {
+    order: 2;
+    margin-left: 0;
+  }
+  /* Beside the brand there is room for an initial, with the dot as its badge; the name and the
+     status are the panel's (and the summary's label). */
+  .account > summary {
+    position: relative;
+    justify-content: center;
+    width: 44px;
+    padding: 0;
+    border-radius: 50%;
+  }
+  .account-name,
+  .account-caret {
+    display: none;
+  }
+  .account-initial {
+    display: block;
+    font-size: var(--fs-lg);
+  }
+  .account > summary .sync-dot {
+    position: absolute;
+    right: 1px;
+    bottom: 3px;
+  }
+  .account-signin {
+    padding: 4px 12px;
+  }
+}
+/* The sign-in callback's one line (?signin=denied|error), the Backup card's sync lines. */
+.signin-notice,
+.sync-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 4px 4px 4px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--info-bg);
+  color: var(--info-ink);
+  font-size: var(--fs-sm);
+}
+.sync-notice {
+  margin: 0;
+}
+.signin-notice .btn,
+.sync-notice .btn {
+  color: inherit;
+  min-height: 36px;
+  padding: 4px 10px;
+}
+.sync-line {
+  margin: 0;
+  font-weight: 600;
+}
+
 .grid {
   display: grid;
   gap: 14px;

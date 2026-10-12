@@ -24,11 +24,10 @@ export type GuideTarget = (typeof GUIDE_TARGETS)[number];
 export const guideSelector = (target: GuideTarget): string => `[data-guide="${target}"]`;
 
 /**
- * Targets that live in files wave 3 writes: `backup` on the Presets page's Backup card
- * (`PresetsPage.tsx`) and `account` on the account menu (`AccountMenu.tsx`, new), both C2's. The
- * targets test skips these until C2 adds the attributes and empties this list.
+ * Targets the targets test skips. Empty since wave 3 put `backup` on the Presets page's Backup
+ * card (`PresetsPage.tsx`) and `account` on the account menu (`AccountMenu.tsx`).
  */
-export const WAVE_3_TARGETS: readonly GuideTarget[] = ["backup", "account"];
+export const WAVE_3_TARGETS: readonly GuideTarget[] = [];
 
 /** One step of the walkthrough: what it lights and what its popover says. */
 export interface TourStep {
@@ -154,7 +153,7 @@ export const HINTS: Readonly<Record<HintCard, Hint>> = {
   backup: {
     target: "backup",
     title: "Backup",
-    body: "Export saves your presets, doughs, saved plans and the current plan to a file. Import replaces all of them with what the file holds, so export first if you want to keep what is here.",
+    body: "Export saves your presets, doughs, bulk table, saved plans, settings and the current plan to a file. Import replaces them with what the file holds, as a change made now; signed in, that change then reaches your other devices. Export first if you want to keep what is here.",
     showMe: [],
   },
 };

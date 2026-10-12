@@ -1,7 +1,7 @@
 // The guide's red pin (PLAN-accounts §7): every target the copy names renders as a `data-guide`
 // attribute, exactly once, on the cards it lives on, built from the busy fixture the way App.tsx
-// builds them, plus an opened dough form (the Tangzhong part lives only there). C2 adds the two in
-// WAVE_3_TARGETS and empties that list.
+// builds them, plus an opened dough form (the Tangzhong part lives only there), the Presets page
+// (the Doughs card and the Backup card) and the account menu signed in.
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -11,9 +11,11 @@ import { clonePresets } from "../lib/presets";
 import { isPlan } from "../lib/storage";
 import { DEFAULT_BULK_TABLE, buildTimeline } from "../lib/timeline";
 import { DivisionCard } from "../components/DivisionCard";
-import { DoughForm, DoughsCard } from "../components/DoughsCard";
+import { AccountMenu } from "../components/AccountMenu";
+import { DoughForm } from "../components/DoughsCard";
 import { IngredientsCard } from "../components/IngredientsCard";
 import { ItemsCard } from "../components/ItemsCard";
+import { PresetsPage } from "../components/PresetsPage";
 import { TimelineCard } from "../components/TimelineCard";
 import { STATES } from "../../scripts/screens/states.mjs";
 import { WAVE_3_TARGETS, targetsInCopy } from "./copy";
@@ -47,9 +49,24 @@ function markup(state: keyof typeof STATES = "busy"): string {
       onBulkTable: noop,
       starterTotal: result.starter,
     }),
-    // Every dough starts closed on the card, so the Tangzhong part is reached by its form.
-    createElement(DoughsCard, { doughs, presets, onChange: noop }),
+    // The Presets page holds the Doughs card and the Backup card. Every dough starts closed on the
+    // card, so the Tangzhong part is reached by its form.
+    createElement(PresetsPage, {
+      presets,
+      onChange: noop,
+      onExport: noop,
+      onImport: noop,
+      doughs,
+      onDoughs: noop,
+      account: "in",
+      syncLine: "Signed in as Ben, synced 21:14.",
+    }),
     createElement(DoughForm, { dough: softSandwich, presets, onChange: noop }),
+    createElement(AccountMenu, {
+      me: { enabled: true, user: { name: "Ben", email: null } },
+      status: { kind: "synced", at: "2026-10-12T20:14:00.000Z" },
+      line: "Signed in as Ben, synced 21:14.",
+    }),
   ];
   return cards.map((c) => renderToStaticMarkup(c)).join("\n");
 }
