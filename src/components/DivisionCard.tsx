@@ -9,6 +9,7 @@ import {
 import { leanDough } from "../lib/doughs";
 import { fmtG, lineLabel } from "../lib/format";
 import "./division.css";
+import { HintButton } from "../guide/hints";
 
 interface Props {
   plan: Plan;
@@ -226,9 +227,10 @@ export function DivisionCard({ plan, result }: Props) {
         : "planned weights include add-ins"),
   ];
   return (
-    <section className="card division">
+    <section className="card division" data-guide="division">
       <header>
         <h2>Division</h2>
+        <HintButton card="division" />
         {sub.some(Boolean) && (
           <span className="sub num">
             <Dotted parts={sub} />

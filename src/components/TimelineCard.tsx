@@ -22,6 +22,7 @@ import {
   type TimelineRow,
 } from "./timelineRows";
 import "./timeline.css";
+import { HintButton } from "../guide/hints";
 
 interface Props {
   plan: Plan;
@@ -420,14 +421,20 @@ export function TimelineCard({
   const byDough = [...blocks].sort((a, b) => RANK[a.method] - RANK[b.method]);
 
   return (
-    <section className="card print-page timeline-card">
+    <section className="card print-page timeline-card" data-guide="timeline">
       <header>
         <h2>Timeline</h2>
+        <HintButton card="timeline" />
         <span className="sub">
           {fmtDayTime(start)} → {fmtDayTime(timeline.end, start)}
         </span>
         {multi && (
-          <div className="toggle" role="group" aria-label="Timeline view">
+          <div
+            className="toggle"
+            role="group"
+            aria-label="Timeline view"
+            data-guide="timeline.view"
+          >
             <button type="button" aria-pressed={inOrder} onClick={() => setView("order")}>
               In order
             </button>

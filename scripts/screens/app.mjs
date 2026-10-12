@@ -54,6 +54,15 @@ export async function serve({ dist, port = 0 } = {}) {
 
 export const VIEWS = ["plan", "kitchen", "presets"];
 
+/** The beacons the app draws (`BEACONS` in src/guide/copy.ts), by target. */
+export const BEACON_TARGETS = ["items.addins", "timeline.view", "doughs.tangzhong"];
+
+/**
+ * `sourdough.v1.guide` as every state is seeded unless a shot asks for the guide: the walkthrough
+ * seen and every beacon dismissed, so no picture or print has a tour or a dot in it by accident.
+ */
+export const GUIDE_QUIET = { seen: true, dismissed: BEACON_TARGETS };
+
 /** Waits until `selector` matches in the page. */
 const until = (page, selector) =>
   page.eval(`new Promise((resolve, reject) => {
@@ -75,9 +84,15 @@ const nav = (page, label) =>
 /**
  * Opens the app on a state: storage cleared and seeded, the page loaded, fonts in, then the view
  * (`plan`, `kitchen` or `presets`). `timeline` ("order" or "dough") seeds the Timeline card's view;
- * `open` (presets) opens the library entry whose header names it.
+ * `open` (presets) opens the library entry whose header names it; `guide` is what the guide has
+ * seen (default `GUIDE_QUIET`).
  */
-export async function openState(page, origin, name, { view = "plan", timeline, open } = {}) {
+export async function openState(
+  page,
+  origin,
+  name,
+  { view = "plan", timeline, open, guide = GUIDE_QUIET } = {},
+) {
   const state = STATES[name];
   if (!state) throw new Error(`no state "${name}": ${Object.keys(STATES).join(", ")}`);
   if (!VIEWS.includes(view)) throw new Error(`no view "${view}": ${VIEWS.join(", ")}`);
@@ -85,6 +100,7 @@ export async function openState(page, origin, name, { view = "plan", timeline, o
   if (state.doughs) stored.doughs = state.doughs;
   if (state.presets) stored.presets = state.presets;
   if (timeline) stored.timelineView = timeline;
+  stored.guide = guide;
   await page.goto(origin);
   await page.eval(`(() => {
     localStorage.clear();

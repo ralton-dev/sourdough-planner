@@ -78,7 +78,7 @@ export const TOUR: readonly TourStep[] = [
 /** A "show me" link on a hint card: it lights one element with a line of its own. */
 export interface ShowMe {
   target: GuideTarget;
-  /** The link's text. */
+  /** What it shows, to follow "Show me": the link reads "Show me the add-ins tick box". */
   label: string;
   /** The one-line popover on the element it lights. */
   body: string;
@@ -104,7 +104,7 @@ export const HINTS: Readonly<Record<HintCard, Hint>> = {
     showMe: [
       {
         target: "items.addins",
-        label: "The add-ins tick box",
+        label: "the add-ins tick box",
         body: "Ticked, a 600 g loaf weighs 600 g with its add-ins; unticked, the add-ins go on top.",
       },
     ],
@@ -116,7 +116,7 @@ export const HINTS: Readonly<Record<HintCard, Hint>> = {
     showMe: [
       {
         target: "ingredients.split",
-        label: "A split",
+        label: "a split",
         body: "This dough leaves the main dough here: take the weight it says and work the add-ins in.",
       },
     ],
@@ -134,7 +134,7 @@ export const HINTS: Readonly<Record<HintCard, Hint>> = {
     showMe: [
       {
         target: "timeline.view",
-        label: "In order or by dough",
+        label: "the two views",
         body: "One list in clock order, or a track per dough.",
       },
     ],
@@ -142,11 +142,11 @@ export const HINTS: Readonly<Record<HintCard, Hint>> = {
   doughs: {
     target: "doughs",
     title: "Doughs",
-    body: "Variations on the main dough. A split dough is taken from the main dough at a fold and keeps the main dough's hydration and salt; a dough mixed separately has a bowl of its own. The tangzhong lives on a dough mixed separately: open the dough and look for its Tangzhong part.",
+    body: "Variations on the main dough. A split dough is a portion taken from the main dough at the end of the mix or at a fold, so it keeps the main dough's hydration and salt; a dough mixed separately has a bowl of its own. The tangzhong lives on a dough mixed separately: open one, such as Soft sandwich dough, and look for its Tangzhong part.",
     showMe: [
       {
         target: "doughs.tangzhong",
-        label: "Where the tangzhong lives",
+        label: "where the tangzhong lives",
         body: "Tick it to cook part of the flour with liquid first; the timeline gets a make-it-first step.",
       },
     ],

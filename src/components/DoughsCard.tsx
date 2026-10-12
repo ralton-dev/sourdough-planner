@@ -37,6 +37,8 @@ import {
 } from "../lib/types";
 import { NumberField } from "./NumberField";
 import "./doughs.css";
+import { HintButton } from "../guide/hints";
+import type { GuideTarget } from "../guide/copy";
 
 interface Props {
   /** The dough library, in library order. The lean dough is never in it (decision 1). */
@@ -369,9 +371,10 @@ export function DoughsCard({ doughs, presets, onChange }: Props) {
   };
 
   return (
-    <section className="card doughs-card">
+    <section className="card doughs-card" data-guide="doughs">
       <header>
         <h2>Doughs</h2>
+        <HintButton card="doughs" />
         <div className="row">
           <button type="button" className="btn primary" onClick={add}>
             Add dough
@@ -459,17 +462,20 @@ function Section({
   title,
   summary,
   initiallyOpen = false,
+  guide,
   children,
 }: {
   title: string;
   summary: string;
   initiallyOpen?: boolean;
+  /** The guide's target on this part (decision 48), if it is one. */
+  guide?: GuideTarget;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(initiallyOpen);
   const id = useId();
   return (
-    <div className="part">
+    <div className="part" data-guide={guide}>
       <h3>
         <button
           type="button"
@@ -522,7 +528,8 @@ function NotesBox({ value, onChange }: { value: string; onChange: (text: string)
   );
 }
 
-function DoughForm({
+/** One dough's editor, as the card opens it; exported for the guide's targets test. */
+export function DoughForm({
   dough: d,
   presets,
   onChange,
@@ -727,7 +734,7 @@ function DoughForm({
       </Section>
 
       {(!split || tz) && (
-        <Section title="Tangzhong" summary={tangzhongSummary(d)}>
+        <Section title="Tangzhong" summary={tangzhongSummary(d)} guide="doughs.tangzhong">
           <label className="check">
             <input
               type="checkbox"

@@ -1,6 +1,7 @@
 // The guide's red pin (PLAN-accounts §7): every target the copy names renders as a `data-guide`
 // attribute, exactly once, on the cards it lives on, built from the busy fixture the way App.tsx
-// builds them. Failing until G2 adds the attributes; C2 adds the two in WAVE_3_TARGETS.
+// builds them, plus an opened dough form (the Tangzhong part lives only there). C2 adds the two in
+// WAVE_3_TARGETS and empties that list.
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -10,7 +11,7 @@ import { clonePresets } from "../lib/presets";
 import { isPlan } from "../lib/storage";
 import { DEFAULT_BULK_TABLE, buildTimeline } from "../lib/timeline";
 import { DivisionCard } from "../components/DivisionCard";
-import { DoughsCard } from "../components/DoughsCard";
+import { DoughForm, DoughsCard } from "../components/DoughsCard";
 import { IngredientsCard } from "../components/IngredientsCard";
 import { ItemsCard } from "../components/ItemsCard";
 import { TimelineCard } from "../components/TimelineCard";
@@ -19,14 +20,19 @@ import { WAVE_3_TARGETS, targetsInCopy } from "./copy";
 
 const noop = () => {};
 
-/** The busy plan's cards, as App.tsx renders them on the plan page, and the Doughs card. */
-function markup(): string {
-  const plan: unknown = STATES.busy.plan;
-  if (!isPlan(plan)) throw new Error("the busy fixture is not a plan");
+/**
+ * A fixture's plan cards, as App.tsx renders them on the plan page, the Doughs card, and the Soft
+ * sandwich dough's form opened as the card opens it.
+ */
+function markup(state: keyof typeof STATES = "busy"): string {
+  const plan: unknown = STATES[state].plan;
+  if (!isPlan(plan)) throw new Error(`the ${state} fixture is not a plan`);
   const presets = clonePresets();
   const doughs = cloneDoughs();
   const bulkTable = DEFAULT_BULK_TABLE.map((r) => ({ ...r }));
   const result = computePlan(plan, presets, doughs);
+  const softSandwich = doughs.find((d) => d.id === "soft-sandwich");
+  if (!softSandwich) throw new Error("no Soft sandwich dough in the defaults");
   const timeline = buildTimeline(plan, presets, bulkTable, doughs, result);
   const cards: ReactElement[] = [
     createElement(ItemsCard, { plan, presets, doughs, onChange: noop }),
@@ -41,9 +47,9 @@ function markup(): string {
       onBulkTable: noop,
       starterTotal: result.starter,
     }),
-    // Every dough starts closed, so its Tangzhong part is not in this markup: G2 decides how the
-    // test reaches `doughs.tangzhong` (an opened dough form), see the G1 report.
+    // Every dough starts closed on the card, so the Tangzhong part is reached by its form.
     createElement(DoughsCard, { doughs, presets, onChange: noop }),
+    createElement(DoughForm, { dough: softSandwich, presets, onChange: noop }),
   ];
   return cards.map((c) => renderToStaticMarkup(c)).join("\n");
 }
@@ -61,12 +67,26 @@ describe("guide targets", () => {
     expect(html).toContain('aria-label="Timeline view"'); // timeline.view
   });
 
-  it.fails("every target the copy names renders exactly once", () => {
+  it("every target the copy names renders exactly once", () => {
     const html = markup();
     const wanted = targetsInCopy().filter((t) => !WAVE_3_TARGETS.includes(t));
     expect(wanted.length).toBeGreaterThan(0);
     for (const target of wanted) {
       expect(count(html, target), `data-guide="${target}"`).toBe(1);
+    }
+  });
+
+  it("the split target is on the first split only, on the stress plan too", () => {
+    const html = markup("stress");
+    expect(html.split("· split off").length - 1).toBeGreaterThan(1); // several splits
+    expect(count(html, "ingredients.split")).toBe(1);
+  });
+
+  it("a card's ? is a button that names its card and does not print", () => {
+    const html = markup();
+    for (const title of ["Items", "Ingredients", "Division", "Timeline", "Doughs"]) {
+      expect(html).toContain(`<h2>${title}</h2><button type="button" class="guide-q no-print"`);
+      expect(html).toContain(`aria-label="About ${title}"`);
     }
   });
 });

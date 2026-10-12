@@ -27,6 +27,16 @@ Every flag can repeat or take a comma list; left out, a flag takes every value i
 - `--open <name>`: on the presets view, open the dough or preset of that name.
 - `--card <slug>`: on the plan view, crop only these cards (`ingredients`, `division`, `timeline`,
   `items`, `batch`, `notes`, `saved-plans`), or `none` (default: every card shown).
+- `--guide <g>`: show the guide (decision 49) in the shot. `tour:<n>` opens the walkthrough at step
+  _n_ (seeded as a first visit, so it needs the app to mount `firstRun()` or the footer's "Show me
+  around"); `hint:<card>` taps that card's `?` (`items`, `ingredients`, `division`, `timeline`, and
+  `doughs` or `backup` on the presets view); `show:<card>` then follows the hint's first "show me";
+  `beacon:<target>` taps a beacon (`items.addins`, `timeline.view`, `doughs.tangzhong`; the last
+  needs `--view presets --open "Soft sandwich dough"`). Each of these is opened afresh at each width
+  and scheme and shot as the screen shows it (900 px tall, 844 under 600 px wide), not the whole
+  page, and its line says whether the popover is inside the screen and how much of the lit element
+  it covers. `beacons` shoots the whole page with every beacon whose control is shown, and lists
+  them. Files gain `-guide-<g>`.
 - `--text`: print each card's text to the terminal instead of taking pictures (1200, light).
 - `--firefox`: Firefox instead of Chrome (one start per scheme: its scheme is a preference).
 - `--out <dir>`: where the PNGs go (default: `$TMPDIR/sourdough-screens`).
@@ -66,4 +76,6 @@ the `plan()` helper there), and `doughs` or `presets` only to replace a library 
 app's defaults load), plus a line of `about`. Each key is written to `localStorage` as
 `sourdough.v1.<key>` before the app loads, so a value the app's validators refuse (`isPlan`,
 `isDoughList` in `src/lib/storage.ts`) is ignored and the app falls back to its defaults; check the
-first screenshot. Times are local to Europe/London, the browsers run en-GB.
+first screenshot. Every state is also seeded with `sourdough.v1.guide` = `{ seen: true,
+dismissed: [the three beacons] }` (`GUIDE_QUIET` in `app.mjs`), so no screenshot or print has the
+walkthrough or a beacon in it unless `--guide` asks; `print.mjs` seeds the same way. Times are local to Europe/London, the browsers run en-GB.

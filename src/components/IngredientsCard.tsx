@@ -12,6 +12,7 @@ import { checkRow, fmtG, fmtPct, fmtSalt, joinAnd } from "../lib/format";
 import { doughColour } from "./DivisionCard";
 import { Warnings } from "./Warnings";
 import "./ingredients.css";
+import { HintButton } from "../guide/hints";
 
 interface Props {
   plan: Plan;
@@ -252,13 +253,19 @@ function SplitSection({
   dough,
   all,
   colour,
+  first,
 }: {
   dough: DoughResult;
   all: boolean;
   colour: number;
+  /** The first split on the card: the guide's `ingredients.split` (decision 48). */
+  first: boolean;
 }) {
   return (
-    <div className={`subsection dough-${colour}`}>
+    <div
+      className={`subsection dough-${colour}`}
+      data-guide={first ? "ingredients.split" : undefined}
+    >
       <h4 className="head">
         {dough.icon && `${dough.icon} `}
         {dough.name}
@@ -307,11 +314,13 @@ function MixSection({
   result,
   halfGramSalt,
   several,
+  guide,
 }: {
   mix: MixResult;
   result: BatchResult;
   halfGramSalt: boolean;
   several: boolean;
+  guide: boolean;
 }) {
   const base = mix.id === "base";
   const own = base ? undefined : result.doughs.find((d) => d.doughId === mix.id);
@@ -359,12 +368,13 @@ function MixSection({
         {fate && <p className="note-planner">{fate}</p>}
         <Notes text={own?.notes} />
       </div>
-      {splits.map((d) => (
+      {splits.map((d, i) => (
         <SplitSection
           key={d.doughId}
           dough={d}
           all={takesAll(d, mix, leanPieces)}
           colour={doughColour(result, d.doughId) ?? 0}
+          first={guide && i === 0}
         />
       ))}
     </div>
@@ -378,9 +388,12 @@ function MixSection({
 export function IngredientsTable({
   result,
   halfGramSalt,
+  guide = false,
 }: {
   result: BatchResult;
   halfGramSalt: boolean;
+  /** Carry the guide's split target; the plan page's card does, kitchen mode does not. */
+  guide?: boolean;
 }) {
   if (result.mixes.length === 0) return <p className="note-planner">Nothing to mix yet.</p>;
   const several = result.mixes.length > 1;
@@ -393,6 +406,7 @@ export function IngredientsTable({
           result={result}
           halfGramSalt={halfGramSalt}
           several={several}
+          guide={guide}
         />
       ))}
     </div>
@@ -422,9 +436,10 @@ export function IngredientsCard({ plan, result, halfGramSalt, onHalfGram }: Prop
   const several = result.mixes.length > 1;
   const warned = result.warnings.length > 0;
   return (
-    <section className="card ingredients-card">
+    <section className="card ingredients-card" data-guide="ingredients">
       <header>
         <h2>Ingredients</h2>
+        <HintButton card="ingredients" />
         <span className="sub num">
           <span className="nowrap">{fmtG(result.totalFlour)} total flour</span>
           {shown && (
@@ -437,7 +452,7 @@ export function IngredientsCard({ plan, result, halfGramSalt, onHalfGram }: Prop
         </span>
       </header>
       {plan.mode === "items" && result.mixes.length > 0 && <StarterLine result={result} />}
-      <IngredientsTable result={result} halfGramSalt={halfGramSalt} />
+      <IngredientsTable result={result} halfGramSalt={halfGramSalt} guide />
       {/* The scale toggle is not printed: a footer holding only it is not printed either. */}
       {(onHalfGram || warned) && (
         <footer className={warned ? "card-footer" : "card-footer no-print"}>

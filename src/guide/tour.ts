@@ -5,34 +5,16 @@ import { createElement, type ReactElement } from "react";
 import { driver, type Config, type DriveStep, type Driver, type PopoverDOM } from "driver.js";
 import "driver.js/dist/driver.css";
 import "./guide.css";
-import { load, save } from "../lib/storage";
+import { DEFAULT_GUIDE, KEYS, isGuideState, load, save, type GuideState } from "../lib/storage";
 import { TOUR, guideSelector, type GuideTarget } from "./copy";
 
-/** What this browser has seen of the guide (decision 49). */
-export interface GuideState {
-  /** The walkthrough has run here, to the end or closed. */
-  seen: boolean;
-  /** Beacons dismissed here, by target. */
-  dismissed: string[];
-}
-
-// TODO(C2): use KEYS.guide and its validator from src/lib/storage.ts once C1's bundle v3 lands.
-export const GUIDE_KEY = "sourdough.v1.guide";
-export const DEFAULT_GUIDE: GuideState = { seen: false, dismissed: [] };
-
-const isGuideState = (v: unknown): v is GuideState =>
-  typeof v === "object" &&
-  v !== null &&
-  typeof (v as GuideState).seen === "boolean" &&
-  Array.isArray((v as GuideState).dismissed) &&
-  (v as GuideState).dismissed.every((d) => typeof d === "string");
-
+/** What this browser has seen of the guide (`KEYS.guide`, decision 49); the default when unset. */
 export function loadGuide(): GuideState {
-  return load(GUIDE_KEY, DEFAULT_GUIDE, isGuideState);
+  return load(KEYS.guide, DEFAULT_GUIDE, isGuideState);
 }
 
 export function saveGuide(next: GuideState): void {
-  save(GUIDE_KEY, next);
+  save(KEYS.guide, next);
 }
 
 /** A target on the page and laid out (not inside something closed or `display: none`). */
@@ -79,12 +61,15 @@ export function stopGuide(): void {
   active = undefined;
 }
 
-/** Runs `steps` with the base config and `extra`, after closing whatever was open. */
-export function runGuide(steps: DriveStep[], extra: Config = {}): Driver {
+/**
+ * Runs `steps` from step `from` with the base config and `extra`, after closing whatever was
+ * open. A hint card's "show me" starts on its second step, so Back returns to the card.
+ */
+export function runGuide(steps: DriveStep[], extra: Config = {}, from = 0): Driver {
   stopGuide();
   const d = driver({ ...baseConfig(), ...extra, steps });
   active = d;
-  d.drive();
+  d.drive(from);
   return d;
 }
 

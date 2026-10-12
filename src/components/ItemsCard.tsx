@@ -12,6 +12,7 @@ import { lineLabel } from "../lib/format";
 import { doughColour } from "./DivisionCard";
 import { NumberField } from "./NumberField";
 import "./items.css";
+import { HintButton } from "../guide/hints";
 
 interface Props {
   plan: Plan;
@@ -118,9 +119,10 @@ export function ItemsCard({ plan, presets, doughs, onChange }: Props) {
   };
 
   return (
-    <section className="card items">
+    <section className="card items" data-guide="items">
       <header>
         <h2>Items</h2>
+        <HintButton card="items" />
         <span className="sub">
           {starter
             ? "Flex items absorb the surplus. Set a weight to pin one."
@@ -305,7 +307,7 @@ export function ItemsCard({ plan, presets, doughs, onChange }: Props) {
       </div>
       {showAddInsBox && (
         <div className="card-footer">
-          <label className="check">
+          <label className="check" data-guide="items.addins">
             <input
               type="checkbox"
               checked={plan.weightsIncludeAdditions !== false}

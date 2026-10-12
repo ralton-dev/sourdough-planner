@@ -116,7 +116,7 @@
   border-bottom-color: var(--card);
 }
 
-/* ---- The `?` on a card's header (G2's HintButton) ---- */
+/* ---- The `?` on a card's header (HintButton) ---- */
 .guide-q {
   position: relative;
   display: inline-flex;
@@ -135,6 +135,13 @@
   line-height: 1;
   cursor: pointer;
 }
+/* Beside the title, whatever else the header holds: the free space goes after the `?`, so a
+   header's other parts keep to the right as they did without it. The negative block margins keep
+   the 28 px circle inside the title's line box, so no header grows taller for it. */
+.card > header > .guide-q {
+  align-self: center;
+  margin: -3px auto -3px calc(var(--sp-1) * -1);
+}
 /* A 44 px target around the 28 px circle. */
 .guide-q::after {
   content: "";
@@ -145,23 +152,59 @@
   color: var(--accent);
   border-color: var(--accent);
 }
+.guide-q:focus-visible,
+.guide-beacon:focus-visible,
+.guide-show:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 2px;
+}
 
-/* ---- A beacon (G2): a dot that pulses on the control it explains ---- */
+/* ---- A hint card's "show me" links, under its sentences ---- */
+.sd-pop .guide-show-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-top: var(--sp-2);
+}
+.sd-pop .guide-show {
+  background: none;
+  border: 0;
+  padding: 0;
+  min-height: 44px;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+/* ---- The beacons (Beacons): dots on the page's controls, in a layer of their own ---- */
+.guide-beacons {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  z-index: 40; /* over the cards, under kitchen mode (50) and the guide's dim */
+}
 .guide-beacon {
-  position: relative;
-  display: inline-block;
-  width: 12px;
-  height: 12px;
+  position: absolute;
+  width: 14px;
+  height: 14px;
   padding: 0;
   border: 2px solid var(--card);
   border-radius: 50%;
   background: var(--guide-beacon);
   cursor: pointer;
+  /* Centred on the control's top-left corner. */
+  transform: translate(-50%, -50%);
 }
 .guide-beacon::after {
   content: "";
   position: absolute;
-  inset: -16px; /* a 44 px target */
+  inset: -15px; /* a 44 px target */
 }
 .guide-beacon::before {
   content: "";
@@ -205,7 +248,7 @@
   .driver-popover,
   .driver-overlay,
   .guide-q,
-  .guide-beacon,
+  .guide-beacons,
   .guide-around {
     display: none !important;
   }
