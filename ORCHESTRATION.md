@@ -54,14 +54,52 @@ and compare the PNGs. Only a view that needs wiring `App.tsx` does not have yet 
 temporary wiring in such a worktree; never commit from it, and remove it with
 `git worktree remove --force` when done.
 
+Every state is seeded with the guide quiet (`sourdough.v1.guide` = `{ seen: true, dismissed: [the
+three beacons] }`, `GUIDE_QUIET` in `scripts/screens/app.mjs`; `print.mjs` seeds the same), so no
+shot or print carries the walkthrough or a beacon unless asked. `--guide tour:<n>` opens the
+walkthrough at step _n_, `hint:<card>` a card's `?`, `show:<card>` its first "show me",
+`beacon:<target>` one beacon and `beacons` every beacon on the page; `scripts/screens/README.md`
+has the details.
+
+## Accounts locally
+
+Accounts are off unless all six account variables are set (`PLAN-accounts.md` §3). To walk them,
+start the test-only issuer, which prints the env block to start the app against it:
+
+```
+node server/fake-issuer.mjs        # 127.0.0.1:9400; FAKE_ISSUER_DENY=1 answers access_denied
+```
+
+then, in another terminal, after `npm run build`:
+
+```
+DATA_DIR=$TMPDIR/sdp-local-data APP_URL=http://127.0.0.1:8080 \
+  OIDC_ISSUER=http://127.0.0.1:9400/application/o/sdp/ \
+  OIDC_CLIENT_ID=sdp-local OIDC_CLIENT_SECRET=sdp-local-secret \
+  SESSION_SECRET=insecure-local-only-session-secret-0123456789 \
+  node server/index.mjs
+```
+
+- Open `http://127.0.0.1:8080`, not `localhost`: the cookie belongs to `APP_URL`'s host.
+- Every sign-in is the same user ("Test Baker"), so a private window (or a second browser profile)
+  is the second device of one person: edit different sections on each to see the merge notice.
+- The server holds `index.html` in memory: restart it after a rebuild, or it serves the old
+  bundle's hashed asset names.
+- `kill -9` the server to simulate a lost network ("Offline, changes kept"); SIGTERM shuts down
+  gently and the client sees a clean close, not an outage. Start it again to see the recovery.
+- A plain-http issuer is accepted only on loopback; nothing local or in a test ever points at a
+  real issuer.
+
 ## Git conventions
 
 - Commit straight onto `main`; no branches. Stage only the files a package owns, by name. Never
   `git add -A`, `git stash`, `git checkout --` or `git restore` while other agents share the tree.
 - Message: `type(scope): summary` with a short body saying why (`feat(lib)`, `fix(app)`,
   `docs(plan)`, `ci(docker)`); one commit per package, plus follow-ups as their own commits.
-- Plans live at the repo root (`PLAN-<idea>.md`); research under `docs/`. Decisions are numbered
-  continuously: `PLAN-doughs.md` ends at decision 23; the next plan starts at 24.
+- Plans live at the repo root (`PLAN-<idea>.md`); research and the deployment contract
+  (`docs/deployment.md`) under `docs/`. Decisions are numbered continuously: `PLAN-doughs.md`
+  ended at 23, `PLAN-redesign.md` at 36, `PLAN-accounts.md` ends at 52; the next plan starts
+  at 53.
 
 ## Code conventions that bite
 
@@ -73,6 +111,15 @@ temporary wiring in such a worktree; never commit from it, and remove it with
   hydration. The §5.5 reference bake (1000 / 718.75 / 250 / 22.5 / 1991.25, loaf 605.625) is frozen
   on `REF_PRESETS` fixtures in `calc.test.ts` and `timeline.test.ts`; it must not move.
 - `NumberField` tolerates half-typed values and clamps on blur; do not re-sync it on every change.
+- **Migrations (decision 41):** `server/migrations/NNN_name.sql`, numbered, applied at boot in the
+  server's own process, one transaction each, recorded in `schema_migrations`. Each is idempotent
+  (`CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`) and never contains `DROP`,
+  `DELETE` or `TRUNCATE`. A change to an applied file does nothing; add the next number.
+- **The image runs `npm ci --omit=dev`**: only the server's `openid-client` is a dependency.
+  Everything Vite bundles (React, driver.js) stays in `devDependencies`, or the runtime stage
+  installs it for nothing.
+- **`node:sqlite` needs Node 22.13 or later** (`engines` says `>=22.13`; the image pins
+  `node:22.23-alpine`). An older local Node fails the server tests on the import.
 
 ## Failures this project keeps having
 
