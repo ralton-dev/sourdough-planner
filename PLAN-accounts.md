@@ -510,3 +510,80 @@ clocks); a first-run tour on a lean plan where the split target is absent (skipp
 harness for anything restyled; the print check for anything printed. One commit per package.
 Nothing is pushed until Ben has looked at it locally with the fake issuer. Commit this plan to the
 repo root before wave 1 starts.
+
+---
+
+## 12. Close-out (2026-10-13)
+
+All eight packages landed on `main`, unpushed. Decisions end at 52; the next plan starts at 53.
+
+| Package | Commits                                                                                   |
+| ------- | ----------------------------------------------------------------------------------------- |
+| C1      | `3bf9341` bundle v3 and the merge                                                         |
+| P1      | `56ae878` store, migrations, router; the state pin red                                    |
+| G1      | `5aedfec` driver.js, the tour, the copy, the targets pin; `8929a39` engines `>=22.13`     |
+| P3      | `c2699af` the state API; the state pin green                                              |
+| P2      | `56aae22` OIDC login, logout, `/api/me`, the fake issuer                                  |
+| G2      | `8ef6ecd` hint cards, beacons, the `data-guide` targets; the guide pin green              |
+| C2      | `708ec1a` sync client, account menu, privacy by mode, the tour mounted; `5631e94` README  |
+| D1      | `b9fa2d9` F1, `905f125` F2, `8c273ac` ORCHESTRATION, `7e8efdc` `docs/deployment.md`, this |
+
+**Scope change (Ben, 2026-10-12):** the homelab-k8s deployment plan (decision 52, D1's second
+half) was skipped. D1 wrote only the app-side briefing, `docs/deployment.md`; the cluster plan is
+for when Ben asks for it. SQLite on a PVC is confirmed (decision 40 and §10.2); `server/store.mjs`
+stays the Postgres seam.
+
+**Plan drift accepted** (the source is right, the plan text above is not):
+
+- `openid-client` never fetches the JWKS in the code flow: the ID token is trusted on the token
+  endpoint's TLS (OIDC Core 3.1.3.7), so a plain-http issuer is refused off loopback, and the
+  server's egress is discovery and the token endpoint only (§3, §5, decision 38).
+- driver.js 1.3.1 has no hints API and no `skipMissingElement`: beacons are self-rendered in
+  `src/guide/hints.tsx` (a portal over the page), and the tour filters out steps whose target is
+  absent (decisions 47, 49; G1's config list).
+- driver.js sits in `devDependencies`: Vite bundles it, and the image runs `npm ci --omit=dev`
+  (decision 47 said "dependency").
+- `ui` (the settings) joined the bundle in version 3, the sixth section (decision 44).
+- `OIDC_ISSUER=""` (set but empty) means accounts off whatever else is set: the documented
+  rollback that keeps the data (§3's all-or-nothing rule).
+- The 1 MiB limit is on the whole `PUT` body, envelope included (decision 43).
+- An import stamps every section it carries with the import time; a section a file lacks gets
+  none (decision 44 said "older files get every timestamp set to the import moment").
+- `readJson` answers 415 to a write without `Content-Type: application/json` (decision 43 named
+  only 400, 401, 409 and 413).
+- `readBundle(value, null)` leaves missing change times absent (F2); `readRemote` uses it.
+
+**Follow-ups not done** (each small; none blocks a push):
+
+1. Move the login-cookie sign and verify (`sealLogin`, `openLogin`) from `server/auth.mjs` into
+   `server/session.mjs` beside `signSessionId`.
+2. Move the plain-http-off-loopback check (`loopbackOnly`) from `authRoutes` into `readConfig`
+   (`server/index.mjs`, `readAccounts`), so the refusal is a config error like the others.
+3. Two accounts signing in on one browser: the first account's local edits merge into the
+   second's document (the browser's storage is shared between them).
+4. The Items card's header sub-line wraps under the title at 1200 px on the lean plan since the
+   `?` arrived (+30 px); a shorter sub-line in `ItemsCard` fixes it if Ben minds.
+5. A second CI smoke step with accounts on: all six variables, a tmpfs at `/data`, the fake
+   issuer; today CI smoke-starts the image accounts off only (`docs/deployment.md` §14).
+
+**End-to-end evidence** (D1, on `7e8efdc`, a production build served by `node server/index.mjs`
+with `DATA_DIR` on a temp dir and the fake issuer; scratch paths, not kept):
+
+- The two-device walk, Firefox then Chrome, every step passing (sign in, a dough edited on A seen
+  on B, different sections merged with the notice, the same section's later save winning whole,
+  `kill -9` offline and recovery, sign out, `FAKE_ISSUER_DENY=1`): `/private/tmp/claude-501/-Users-benralton-repos-BEN-WORKING-sourdough-planner/9b84a2e8-4ff0-4117-8ed3-323d014b67ca/scratchpad/e2e/firefox/`,
+  `/private/tmp/claude-501/-Users-benralton-repos-BEN-WORKING-sourdough-planner/9b84a2e8-4ff0-4117-8ed3-323d014b67ca/scratchpad/e2e/chrome/` (`walk.log` and `w00`–`w12`).
+- F1: tour closed by Escape inside the animation, reload, no tour, both browsers:
+  `f1-reload-no-tour.png` in the same folders.
+- Account menu signed out, signed in, open, offline, "Sign in again", the tour's account step and
+  the Backup card in all four statuses, at 1200 and 390, light and dark, both browsers:
+  `/private/tmp/claude-501/-Users-benralton-repos-BEN-WORKING-sourdough-planner/9b84a2e8-4ff0-4117-8ed3-323d014b67ca/scratchpad/e2e/account-firefox/`, `/private/tmp/claude-501/-Users-benralton-repos-BEN-WORKING-sourdough-planner/9b84a2e8-4ff0-4117-8ed3-323d014b67ca/scratchpad/e2e/account-chrome/`.
+- Tour steps 1 and 4 (step 5, the account step, needs accounts on: `l04-*` above), every hint
+  card, the first "show me", each beacon and the page of beacons, at 1200 and 390, light and dark:
+  `/private/tmp/claude-501/-Users-benralton-repos-BEN-WORKING-sourdough-planner/9b84a2e8-4ff0-4117-8ed3-323d014b67ca/scratchpad/e2e/guide-chrome/`, `/private/tmp/claude-501/-Users-benralton-repos-BEN-WORKING-sourdough-planner/9b84a2e8-4ff0-4117-8ed3-323d014b67ca/scratchpad/e2e/guide-firefox/`; every popover inside the screen, 0 px overflow.
+- `npm run screens:print -- --both --png`: every state, both browsers, exit 0, nothing split:
+  `/private/tmp/claude-501/-Users-benralton-repos-BEN-WORKING-sourdough-planner/9b84a2e8-4ff0-4117-8ed3-323d014b67ca/scratchpad/e2e/print/`; signed in on the busy plan with two beacons showing, and again with the tour
+  open, printed in both browsers: no menu, `?`, beacon or popover on any page
+  (`signed-in-busy*-p*.png`).
+- `grep -rn "cdn\|googleapis" dist/` empty; `it.fails` 0 in every test file; accounts off,
+  `GET /api/me` is `{"enabled":false}` with `cache-control: max-age=3600`.
