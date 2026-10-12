@@ -92,25 +92,15 @@ export function timesKey(t: SectionTimes): string {
 /** Whether this device has ever changed anything (else it has nothing of its own to push). */
 export const hasTimes = (t: SectionTimes): boolean => SECTIONS.some((s) => t[s] !== undefined);
 
-/** A time no real change has: what `readBundle` is told is "now" for a section with no time. */
-const NO_TIME = new Date(0).toISOString();
-
 /**
  * The server's bundle read as `parseBundle` reads a file, or null when it fails the same checks:
  * a document this client cannot read is never applied. Unlike a file import, a section the
  * document has no change time for stays without one (oldest in a merge), rather than being dated
- * now and beating this device's real edits. (`readBundle` has no "leave it untimed" option; it
- * belongs in src/lib/storage.ts as one, and this sentinel goes.)
+ * now and beating this device's real edits.
  */
 export function readRemote(value: unknown): (Mergeable & ExportBundle) | null {
   try {
-    const b = readBundle(value, NO_TIME);
-    const updatedAt: SectionTimes = {};
-    for (const s of SECTIONS) {
-      const at = b.updatedAt[s];
-      if (at !== undefined && at !== NO_TIME) updatedAt[s] = at;
-    }
-    return { ...b, updatedAt };
+    return readBundle(value, null);
   } catch {
     return null;
   }

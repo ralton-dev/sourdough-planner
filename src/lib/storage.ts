@@ -426,10 +426,14 @@ export function parseBundle(
   return readBundle(JSON.parse(text), importedAt);
 }
 
-/** `parseBundle` for a value already parsed, such as the bundle in a `GET /api/state` response. */
+/**
+ * `parseBundle` for a value already parsed, such as the bundle in a `GET /api/state` response.
+ * `importedAt: null` leaves a section without a change time untimed instead of dating it now: a
+ * server document's untouched sections must not beat this device's real edits in a merge.
+ */
 export function readBundle(
   v: unknown,
-  importedAt: string = new Date().toISOString(),
+  importedAt: string | null = new Date().toISOString(),
 ): ImportedBundle {
   if (!v || typeof v !== "object" || (v as ExportBundle).app !== "sourdough-planner") {
     throw new Error("Not a sourdough-planner export.");
@@ -462,7 +466,8 @@ export function readBundle(
   };
   const updatedAt: SectionTimes = {};
   for (const s of SECTIONS) {
-    const at = (v3 ? b.updatedAt?.[s] : undefined) ?? (carried[s] ? importedAt : undefined);
+    const own = v3 ? b.updatedAt?.[s] : undefined;
+    const at = own ?? (carried[s] && importedAt !== null ? importedAt : undefined);
     if (at !== undefined) updatedAt[s] = at;
   }
   return {

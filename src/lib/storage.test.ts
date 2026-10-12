@@ -562,6 +562,14 @@ describe("bundle version 3 (PLAN-accounts decision 44)", () => {
     expect(back.updatedAt).toEqual(V3_BUNDLE.updatedAt);
   });
 
+  it("leaves missing change times absent when told importedAt is null", () => {
+    const text = JSON.stringify({ ...V3_BUNDLE, updatedAt: { plan: "2026-10-12T08:59:00.000Z" } });
+    expect(readBundle(JSON.parse(text), null).updatedAt).toEqual({
+      plan: "2026-10-12T08:59:00.000Z",
+    });
+    expect(readBundle(JSON.parse(V2_EXPORT), null).updatedAt).toEqual({});
+  });
+
   it("refuses version 3 settings or change times it cannot read", () => {
     const bad = (patch: object) => () => readBundle({ ...V3_BUNDLE, ...patch }, IMPORTED_AT);
     expect(bad({ ui: { halfGramSalt: "yes" } })).toThrow(/invalid settings/);
