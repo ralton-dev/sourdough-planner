@@ -1,0 +1,216 @@
+/*
+ * The guide in the planner's look (decision 47): driver.js's popover as a card on the tokens of
+ * src/styles.css, the `?` a card's header carries (G2), the beacon's dot, and the footer's
+ * "Show me around". The tokens switch with prefers-color-scheme, so most of this needs no dark
+ * rules of its own; the few it does are at the end. Nothing here prints.
+ */
+:root {
+  --guide-beacon: var(--accent);
+  --guide-pop-shadow: 0 2px 6px rgb(40 25 10 / 0.12), 0 18px 40px -16px rgb(40 25 10 / 0.45);
+}
+
+/* ---- The popover ---- */
+.driver-popover.sd-pop {
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--guide-pop-shadow);
+  padding: var(--sp-4);
+  min-width: 0;
+  width: max-content;
+  max-width: min(340px, calc(100vw - 2 * var(--sp-4)));
+}
+.driver-popover.sd-pop * {
+  font-family: var(--font);
+}
+.sd-pop .driver-popover-title {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  line-height: 1.25;
+  padding-right: var(--sp-6); /* clear of the × */
+  color: var(--ink);
+}
+.sd-pop .driver-popover-title[style*="block"] + .driver-popover-description {
+  margin-top: var(--sp-2);
+}
+.sd-pop .driver-popover-description {
+  font-size: var(--fs-md);
+  line-height: 1.45;
+  color: var(--ink);
+}
+.sd-pop .driver-popover-close-btn {
+  width: 40px;
+  height: 40px;
+  top: 4px;
+  right: 4px;
+  border-radius: var(--radius-sm);
+  font-size: 1.4rem;
+  line-height: 40px;
+  color: var(--muted);
+}
+.sd-pop .driver-popover-close-btn:hover,
+.sd-pop .driver-popover-close-btn:focus {
+  color: var(--ink);
+}
+.sd-pop .driver-popover-footer {
+  margin-top: var(--sp-4);
+  gap: var(--sp-3);
+}
+.sd-pop .driver-popover-progress-text {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sd-pop .driver-popover-navigation-btns {
+  gap: var(--sp-2);
+}
+.sd-pop .driver-popover-navigation-btns button + button {
+  margin-left: 0;
+}
+/* The buttons as the planner's .btn: driver.js unsets everything on them first. */
+.sd-pop .driver-popover-footer button {
+  background: var(--card-2);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 14px;
+  min-height: 40px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 1.2;
+  text-shadow: none;
+  display: inline-flex;
+  align-items: center;
+}
+.sd-pop .driver-popover-footer button:hover,
+.sd-pop .driver-popover-footer button:focus {
+  background: var(--card-2);
+  filter: brightness(0.97);
+}
+.sd-pop .driver-popover-footer .driver-popover-next-btn {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+.sd-pop .driver-popover-footer .driver-popover-next-btn:hover,
+.sd-pop .driver-popover-footer .driver-popover-next-btn:focus {
+  background: var(--accent);
+}
+.sd-pop button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 1px;
+}
+/* The arrow takes the card's colour on the side it points from. */
+.sd-pop .driver-popover-arrow-side-left {
+  border-left-color: var(--card);
+}
+.sd-pop .driver-popover-arrow-side-right {
+  border-right-color: var(--card);
+}
+.sd-pop .driver-popover-arrow-side-top {
+  border-top-color: var(--card);
+}
+.sd-pop .driver-popover-arrow-side-bottom {
+  border-bottom-color: var(--card);
+}
+
+/* ---- The `?` on a card's header (G2's HintButton) ---- */
+.guide-q {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--card-2);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+/* A 44 px target around the 28 px circle. */
+.guide-q::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+.guide-q:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ---- A beacon (G2): a dot that pulses on the control it explains ---- */
+.guide-beacon {
+  position: relative;
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 2px solid var(--card);
+  border-radius: 50%;
+  background: var(--guide-beacon);
+  cursor: pointer;
+}
+.guide-beacon::after {
+  content: "";
+  position: absolute;
+  inset: -16px; /* a 44 px target */
+}
+.guide-beacon::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--guide-beacon) 55%, transparent);
+  animation: guide-pulse 2s ease-out infinite;
+}
+@keyframes guide-pulse {
+  to {
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .guide-beacon::before {
+    animation: none;
+  }
+}
+
+/* ---- The footer's "Show me around" (GuideButton), dressed as the footer's links ---- */
+.guide-around {
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --guide-pop-shadow: 0 2px 6px rgb(0 0 0 / 0.5), 0 18px 40px -16px rgb(0 0 0 / 0.8);
+  }
+}
+
+/* Paper carries none of the guide (decision 49), even printed with the tour open. */
+@media print {
+  .driver-popover,
+  .driver-overlay,
+  .guide-q,
+  .guide-beacon,
+  .guide-around {
+    display: none !important;
+  }
+  /* driver.js clips the lit element's parent while it is lit; paper must not be clipped. */
+  :not(body):has(> .driver-active-element) {
+    overflow: visible !important;
+  }
+}
