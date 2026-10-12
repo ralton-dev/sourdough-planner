@@ -2,15 +2,25 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_DOUGHS, cloneDoughs } from "./doughs";
 import { DEFAULT_PRESETS, LEGACY_PRESETS, clonePresets } from "./presets";
 import {
+  DEFAULT_GUIDE,
+  DEFAULT_SYNC,
+  DEFAULT_UI,
   KEYS,
   exportBundle,
+  isBundleShape,
   isDough,
   isDoughList,
+  isGuideState,
+  isSyncMeta,
+  load,
   loadAll,
   newPlan,
   parseBundle,
+  readBundle,
   save,
 } from "./storage";
+import { SECTIONS } from "./sync";
+import { SHAPE_CASES, V2_EXPORT, V3_BUNDLE } from "./bundle.fixtures";
 import { DEFAULT_BULK_TABLE } from "./timeline";
 import { LEAN_DOUGH_ID, type Dough, type Plan, type Preset } from "./types";
 
@@ -157,7 +167,7 @@ const bundleOf = (doughs: Dough[], presets: Preset[] = DEFAULT_PRESETS) =>
   exportBundle({ presets, doughs, bulkTable: DEFAULT_BULK_TABLE, savedPlans: [], plan: newPlan() });
 
 describe("export / import", () => {
-  it("round-trips a bundle, doughs included, as version 2", () => {
+  it("round-trips a bundle, doughs included, as version 3", () => {
     const plan = newPlan();
     const doughs = cloneDoughs().filter((d) => d.id !== "seeded");
     doughs[0]!.notes = "Less butter next time.";
@@ -176,10 +186,10 @@ describe("export / import", () => {
       savedPlans: [],
       plan,
     });
-    expect(JSON.parse(text)).toMatchObject({ app: "sourdough-planner", version: 2 });
+    expect(JSON.parse(text)).toMatchObject({ app: "sourdough-planner", version: 3 });
     const back = parseBundle(text);
     expect(back.doughs).toEqual(doughs);
-    // Version 2 is taken as written: the bun deleted before the export stays deleted.
+    // Version 3 is taken as written: the bun deleted before the export stays deleted.
     expect(back.presets).toEqual(presets);
     expect(back.plan).toEqual(plan);
   });
@@ -239,7 +249,7 @@ describe("export / import", () => {
     expect(bad({ presets: [{ id: 1 }] })).toThrow(/no valid presets/);
     expect(bad({ doughs: [{ id: "x", name: "X" }] })).toThrow(/invalid doughs/);
     expect(bad({ doughs: null })).toThrow(/invalid doughs/);
-    expect(bad({ version: 3 })).toThrow(/version 3/);
+    expect(bad({ version: 4 })).toThrow(/version 4/);
     expect(bad({ plan: { items: [] } })).toThrow(/no valid plan/);
     expect(() => parseBundle("not json")).toThrow();
   });
@@ -455,5 +465,160 @@ describe("loadAll", () => {
     const all = loadAll();
     expect(all.presets).toEqual(DEFAULT_PRESETS);
     expect(all.doughs).toEqual(DEFAULT_DOUGHS);
+  });
+});
+
+const IMPORTED_AT = "2026-10-12T10:00:00.000Z";
+/** Every section stamped `at`. */
+const allAt = (at: string) => Object.fromEntries(SECTIONS.map((s) => [s, at]));
+
+describe("bundle version 3 (PLAN-accounts decision 44)", () => {
+  it("still imports a version 2 export written by the code before version 3", () => {
+    const back = parseBundle(V2_EXPORT, IMPORTED_AT);
+    const raw = JSON.parse(V2_EXPORT) as { presets: Preset[]; doughs: Dough[]; plan: Plan };
+    expect(back.presets).toEqual(raw.presets);
+    expect(back.doughs).toEqual(raw.doughs);
+    expect(back.plan).toEqual(raw.plan);
+    expect(back.ui).toEqual(DEFAULT_UI);
+    // Every section the file carried is stamped with the import; settings it lacked are not.
+    expect(back.updatedAt).toEqual({
+      presets: IMPORTED_AT,
+      doughs: IMPORTED_AT,
+      bulkTable: IMPORTED_AT,
+      savedPlans: IMPORTED_AT,
+      plan: IMPORTED_AT,
+    });
+  });
+
+  it("stamps a version 1 export's sections with the import, but not the defaults it gains", () => {
+    const back = parseBundle(v1Export(), IMPORTED_AT);
+    expect(back.updatedAt).toEqual({
+      presets: IMPORTED_AT,
+      bulkTable: IMPORTED_AT,
+      savedPlans: IMPORTED_AT,
+      plan: IMPORTED_AT,
+    });
+    expect(back.doughs).toEqual(DEFAULT_DOUGHS);
+  });
+
+  it("stamps with now when no import moment is given", () => {
+    vi.useFakeTimers({ now: new Date(IMPORTED_AT) });
+    try {
+      expect(parseBundle(v1Export()).updatedAt.plan).toBe(IMPORTED_AT);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("writes version 3 with the settings and the change times it is given, and reads them back", () => {
+    const updatedAt = { ...allAt("2026-10-12T08:00:00.000Z"), plan: "2026-10-12T08:30:00.000Z" };
+    const data = {
+      presets: clonePresets(DEFAULT_PRESETS),
+      doughs: [FULL],
+      bulkTable: DEFAULT_BULK_TABLE,
+      savedPlans: [],
+      plan: newPlan(),
+      ui: { halfGramSalt: true },
+      updatedAt,
+    };
+    const text = exportBundle(data, "2026-10-12T09:00:00.000Z");
+    const raw = JSON.parse(text) as Record<string, unknown>;
+    expect(raw).toMatchObject({ version: 3, exportedAt: "2026-10-12T09:00:00.000Z", updatedAt });
+    expect(isBundleShape(raw)).toBe(true);
+    const back = parseBundle(text, IMPORTED_AT);
+    expect(back).toMatchObject({ ...data, version: 3 });
+    expect(back.updatedAt).toEqual(updatedAt);
+    // Round trip: exported again, byte for byte the same.
+    expect(exportBundle(back, "2026-10-12T09:00:00.000Z")).toBe(text);
+  });
+
+  it("writes every section even from a caller that passes no settings or times", () => {
+    const raw = JSON.parse(bundleOf(cloneDoughs())) as Record<string, unknown>;
+    expect(raw).toMatchObject({ version: 3, ui: DEFAULT_UI, updatedAt: {} });
+    expect(isBundleShape(raw)).toBe(true);
+    expect(parseBundle(JSON.stringify(raw), IMPORTED_AT).updatedAt).toEqual(allAt(IMPORTED_AT));
+  });
+
+  it("fills only the times a version 3 file is missing", () => {
+    const text = JSON.stringify({ ...V3_BUNDLE, updatedAt: { plan: "2026-10-12T08:59:00.000Z" } });
+    expect(parseBundle(text, IMPORTED_AT).updatedAt).toEqual({
+      ...allAt(IMPORTED_AT),
+      plan: "2026-10-12T08:59:00.000Z",
+    });
+    const noUi = { ...V3_BUNDLE, ui: undefined, updatedAt: undefined };
+    const back = readBundle(JSON.parse(JSON.stringify(noUi)), IMPORTED_AT);
+    expect(back.ui).toEqual(DEFAULT_UI);
+    expect(back.updatedAt).not.toHaveProperty("ui");
+  });
+
+  it("writes version 3 when handed an older import back", () => {
+    const raw = JSON.parse(exportBundle(parseBundle(V2_EXPORT, IMPORTED_AT))) as object;
+    expect(raw).toMatchObject({ version: 3, updatedAt: { plan: IMPORTED_AT } });
+  });
+
+  it("reads a value already parsed, as the server's response holds it", () => {
+    const back = readBundle(V3_BUNDLE, IMPORTED_AT);
+    expect(back.ui).toEqual({ halfGramSalt: true });
+    expect(back.updatedAt).toEqual(V3_BUNDLE.updatedAt);
+  });
+
+  it("refuses version 3 settings or change times it cannot read", () => {
+    const bad = (patch: object) => () => readBundle({ ...V3_BUNDLE, ...patch }, IMPORTED_AT);
+    expect(bad({ ui: { halfGramSalt: "yes" } })).toThrow(/invalid settings/);
+    expect(bad({ updatedAt: { plan: 5 } })).toThrow(/invalid change times/);
+    expect(bad({ updatedAt: [] })).toThrow(/invalid change times/);
+  });
+});
+
+describe("isBundleShape (mirrored by the server, decision 43)", () => {
+  it.each(SHAPE_CASES)("$name: $ok", ({ value, ok }) => {
+    expect(isBundleShape(value)).toBe(ok);
+  });
+
+  it("accepts a real export and everything parseBundle accepts among the fixtures", () => {
+    expect(isBundleShape(JSON.parse(bundleOf(cloneDoughs())))).toBe(true);
+    for (const { value, ok } of SHAPE_CASES) {
+      if (ok) expect(() => readBundle(value, IMPORTED_AT)).not.toThrow();
+    }
+  });
+});
+
+describe("sync and guide keys", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("names them under sourdough.v1", () => {
+    expect(KEYS.sync).toBe("sourdough.v1.sync");
+    expect(KEYS.guide).toBe("sourdough.v1.guide");
+  });
+
+  it("reads a stored sync record and falls back on anything else", () => {
+    const meta = { version: 4, updatedAt: { plan: "2026-10-12T08:00:00.000Z" } };
+    useStorage({ [KEYS.sync]: meta });
+    expect(load(KEYS.sync, DEFAULT_SYNC, isSyncMeta)).toEqual(meta);
+    expect(isSyncMeta(DEFAULT_SYNC)).toBe(true);
+    expect(isSyncMeta({ version: -1, updatedAt: {} })).toBe(false);
+    expect(isSyncMeta({ version: 1.5, updatedAt: {} })).toBe(false);
+    expect(isSyncMeta({ version: 1 })).toBe(false);
+    expect(isSyncMeta({ version: 1, updatedAt: { plan: 1 } })).toBe(false);
+    useStorage({ [KEYS.sync]: { version: "4" } });
+    expect(load(KEYS.sync, DEFAULT_SYNC, isSyncMeta)).toBe(DEFAULT_SYNC);
+  });
+
+  it("reads a stored guide record and falls back on anything else", () => {
+    const guide = { seen: true, dismissed: ["timeline.view"] };
+    useStorage({ [KEYS.guide]: guide });
+    expect(load(KEYS.guide, DEFAULT_GUIDE, isGuideState)).toEqual(guide);
+    expect(isGuideState(DEFAULT_GUIDE)).toBe(true);
+    expect(isGuideState({ seen: true })).toBe(false);
+    expect(isGuideState({ seen: "yes", dismissed: [] })).toBe(false);
+    expect(isGuideState({ seen: true, dismissed: [1] })).toBe(false);
+  });
+
+  it("leaves loadAll writing nothing new on a fresh browser", () => {
+    const s = useStorage();
+    loadAll();
+    expect([...s.data.keys()]).toEqual([KEYS.seeded]);
   });
 });

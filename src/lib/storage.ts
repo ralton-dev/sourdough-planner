@@ -13,6 +13,7 @@ import {
   type SplitAt,
 } from "./types";
 import { newId } from "./ids";
+import { SECTIONS, type Section, type SectionTimes, type SyncMeta } from "./sync";
 
 const NS = "sourdough.v1";
 export const KEYS = {
@@ -24,6 +25,13 @@ export const KEYS = {
   ui: `${NS}.ui`,
   /** The default preset and dough ids this browser has been given (`loadAll`, decision 14). */
   seeded: `${NS}.seeded`,
+  /**
+   * Sync bookkeeping (`SyncMeta`, decision 46): the server version last seen and when each section
+   * last changed in this browser. Written only by the sync wiring; absent means "never synced".
+   */
+  sync: `${NS}.sync`,
+  /** The walkthrough and beacons this browser has seen or dismissed (`GuideState`, decision 49). */
+  guide: `${NS}.guide`,
 } as const;
 
 export interface UiPrefs {
@@ -189,6 +197,34 @@ export const isPlan = (v: unknown): v is Plan =>
 export const isSavedPlans = (v: unknown): v is SavedPlan[] =>
   Array.isArray(v) && v.every((s) => s && typeof s === "object" && isPlan((s as SavedPlan).plan));
 
+/** Display preferences; every field optional so an older value still reads (merged over defaults). */
+export const isUiPrefs = (v: unknown): v is Partial<UiPrefs> =>
+  isRecord(v) && optional(v.halfGramSalt, isBoolean);
+
+/** Per-section change times: an object whose values are all strings (unknown keys tolerated). */
+const isSectionTimes = (v: unknown): v is SectionTimes =>
+  isRecord(v) && Object.values(v).every(isString);
+
+export const DEFAULT_SYNC: SyncMeta = { version: 0, updatedAt: {} };
+
+export const isSyncMeta = (v: unknown): v is SyncMeta =>
+  isRecord(v) &&
+  isFiniteNumber(v.version) &&
+  Number.isInteger(v.version) &&
+  v.version >= 0 &&
+  isSectionTimes(v.updatedAt);
+
+/** Stored under `KEYS.guide`: whether the walkthrough has run, and the beacons dismissed. */
+export interface GuideState {
+  seen: boolean;
+  dismissed: string[];
+}
+
+export const DEFAULT_GUIDE: GuideState = { seen: false, dismissed: [] };
+
+export const isGuideState = (v: unknown): v is GuideState =>
+  isRecord(v) && isBoolean(v.seen) && Array.isArray(v.dismissed) && v.dismissed.every(isString);
+
 /** Decision 1: the lean dough is the batch settings, never in the library, stored or exported. */
 const withoutLean = (doughs: Dough[]): Dough[] => doughs.filter((d) => d.id !== LEAN_DOUGH_ID);
 
@@ -288,59 +324,147 @@ export function loadAll(): Loaded {
 
 export interface ExportBundle {
   app: "sourdough-planner";
-  /** 1 up to 187a90a; 2 adds the dough library (decision 16). */
-  version: 1 | 2;
+  /**
+   * 1 up to 187a90a; 2 adds the dough library (decision 16); 3 adds `ui` and `updatedAt`, so two
+   * devices can merge section by section (PLAN-accounts decision 44).
+   */
+  version: 1 | 2 | 3;
   exportedAt: string;
   presets: Preset[];
-  /** Version 2, always written; absent from a version-1 file, which imports with the defaults. */
+  /** Version 2 on, always written; absent from a version-1 file, which imports with the defaults. */
   doughs?: Dough[];
   bulkTable: BulkRow[];
   savedPlans: SavedPlan[];
   plan: Plan;
+  /** Version 3, always written; absent before, which imports with the default settings. */
+  ui?: UiPrefs;
+  /** Version 3: per section, when it last changed on the device that wrote the bundle. */
+  updatedAt?: SectionTimes;
 }
 
-/** What an import yields, whatever its version: always with a dough library. */
-export type ImportedBundle = ExportBundle & { doughs: Dough[] };
+/**
+ * What an import yields, whatever its version: every section present, and a change time for each
+ * section the file carried (one it lacked, and so got defaults for, has none: oldest in a merge).
+ */
+export type ImportedBundle = ExportBundle & {
+  doughs: Dough[];
+  ui: UiPrefs;
+  updatedAt: SectionTimes;
+};
 
-/** A version-2 bundle of everything the app keeps, the dough library included (decision 16). */
+/**
+ * A version-3 bundle of everything the app keeps (decisions 16, 44), with the change times it is
+ * given (none given writes an empty map, which reads as "changed at import" on the other side).
+ * Settings not given are written as the defaults, so every version-3 bundle has all six sections.
+ */
 export function exportBundle(
   data: Omit<ExportBundle, "app" | "version" | "exportedAt" | "doughs"> & { doughs: Dough[] },
+  exportedAt: string = new Date().toISOString(),
 ): string {
-  const { doughs, ...rest } = data;
+  // Field by field, so a bundle passed back in (an import, a merge) cannot carry its old version.
   const bundle: ExportBundle = {
     app: "sourdough-planner",
-    version: 2,
-    exportedAt: new Date().toISOString(),
-    ...rest,
-    doughs: withoutLean(doughs),
+    version: 3,
+    exportedAt,
+    presets: data.presets,
+    bulkTable: data.bulkTable,
+    savedPlans: data.savedPlans,
+    plan: data.plan,
+    doughs: withoutLean(data.doughs),
+    ui: { ...DEFAULT_UI, ...data.ui },
+    updatedAt: { ...data.updatedAt },
   };
   return JSON.stringify(bundle, null, 2);
 }
 
 /**
- * Reads an export (decision 16). Version 1, up to 187a90a, has no doughs: it gets the default
- * library, and its presets are reconciled the way a list stored then would be. Version 2 is taken
- * as written; one without doughs (exported before the app passed them) gets the defaults too. A
- * missing version reads as 1; any other version, and anything malformed, is rejected.
+ * The structural check the server mirrors in plain JS (`server/state.mjs`, decision 43): is this a
+ * bundle at all, before anything is stored. Content (what a preset or a dough holds) is the client's
+ * to judge with `parseBundle`; size is the server's (1 MiB). The rules, one per line, for P3 to copy:
+ *
+ *   1. The value is a plain object: not null, not an array.
+ *   2. `app` is the string "sourdough-planner".
+ *   3. `version` is the number 1, 2 or 3 (a missing version is refused here, though `parseBundle`
+ *      reads a hand-made file without one as 1: every bundle the app writes carries it).
+ *   4. `presets` is an array, `bulkTable` is an array, `plan` is a plain object.
+ *   5. Version 3: `doughs` is an array, `savedPlans` is an array, `ui` is a plain object.
+ *   6. Versions 1 and 2: `doughs` and `savedPlans` are each absent or an array; `ui` is absent or a
+ *      plain object.
+ *   7. `updatedAt` is absent, or a plain object every one of whose values is a string.
+ *
+ * "Absent" is `=== undefined` (a key not in the JSON); `null` is present and fails. Nothing else is
+ * looked at: not what the arrays hold, not unknown fields. `src/lib/bundle.fixtures.ts` lists the
+ * cases both sides must agree on.
  */
-export function parseBundle(text: string): ImportedBundle {
-  const v: unknown = JSON.parse(text);
+export function isBundleShape(v: unknown): boolean {
+  if (!isRecord(v) || v.app !== "sourdough-planner") return false;
+  if (v.version !== 1 && v.version !== 2 && v.version !== 3) return false;
+  if (!Array.isArray(v.presets) || !Array.isArray(v.bulkTable) || !isRecord(v.plan)) return false;
+  const v3 = v.version === 3;
+  const list = (x: unknown) => (v3 ? Array.isArray(x) : optional(x, Array.isArray));
+  const object = (x: unknown) => (v3 ? isRecord(x) : optional(x, isRecord));
+  return (
+    list(v.doughs) &&
+    list(v.savedPlans) &&
+    object(v.ui) &&
+    optional(v.updatedAt, (x) => isRecord(x) && Object.values(x).every(isString))
+  );
+}
+
+/**
+ * Reads an export (decisions 16, 44). Version 1, up to 187a90a, has no doughs: it gets the default
+ * library, and its presets are reconciled the way a list stored then would be. Versions 2 and 3 are
+ * taken as written; one without doughs (exported before the app passed them) gets the defaults too.
+ * Settings are read from version 3 only. A missing version reads as 1; any other version, and
+ * anything malformed, is rejected. Each section the file carried gets a change time: its own from
+ * a version-3 `updatedAt`, else `importedAt`; a section the file lacked gets none.
+ */
+export function parseBundle(
+  text: string,
+  importedAt: string = new Date().toISOString(),
+): ImportedBundle {
+  return readBundle(JSON.parse(text), importedAt);
+}
+
+/** `parseBundle` for a value already parsed, such as the bundle in a `GET /api/state` response. */
+export function readBundle(
+  v: unknown,
+  importedAt: string = new Date().toISOString(),
+): ImportedBundle {
   if (!v || typeof v !== "object" || (v as ExportBundle).app !== "sourdough-planner") {
     throw new Error("Not a sourdough-planner export.");
   }
   const b = v as ExportBundle;
   const version: unknown = (v as { version?: unknown }).version ?? 1;
-  if (version !== 1 && version !== 2) {
-    throw new Error(`This export is version ${String(version)}; this app reads versions 1 and 2.`);
+  if (version !== 1 && version !== 2 && version !== 3) {
+    throw new Error(`This export is version ${String(version)}; this app reads versions 1 to 3.`);
   }
+  const legacy = version === 1;
+  const v3 = version === 3;
   if (!isPresetList(b.presets)) throw new Error("Export has no valid presets.");
-  if (version === 2 && b.doughs !== undefined && !isDoughList(b.doughs)) {
+  if (!legacy && b.doughs !== undefined && !isDoughList(b.doughs)) {
     throw new Error("Export has invalid doughs.");
   }
   if (!isBulkTable(b.bulkTable)) throw new Error("Export has no valid bulk table.");
   if (!isSavedPlans(b.savedPlans ?? [])) throw new Error("Export has invalid saved plans.");
   if (!isPlan(b.plan)) throw new Error("Export has no valid plan.");
-  const legacy = version === 1;
+  if (v3 && b.ui !== undefined && !isUiPrefs(b.ui)) throw new Error("Export has invalid settings.");
+  if (v3 && b.updatedAt !== undefined && !isSectionTimes(b.updatedAt)) {
+    throw new Error("Export has invalid change times.");
+  }
+  const carried: Record<Section, boolean> = {
+    presets: true,
+    doughs: !legacy && b.doughs !== undefined,
+    bulkTable: true,
+    savedPlans: b.savedPlans !== undefined,
+    plan: true,
+    ui: v3 && b.ui !== undefined,
+  };
+  const updatedAt: SectionTimes = {};
+  for (const s of SECTIONS) {
+    const at = (v3 ? b.updatedAt?.[s] : undefined) ?? (carried[s] ? importedAt : undefined);
+    if (at !== undefined) updatedAt[s] = at;
+  }
   return {
     ...b,
     presets: legacy
@@ -348,5 +472,7 @@ export function parseBundle(text: string): ImportedBundle {
       : b.presets,
     doughs: !legacy && b.doughs ? withoutLean(b.doughs) : cloneDoughs(),
     savedPlans: b.savedPlans ?? [],
+    ui: { ...DEFAULT_UI, ...(v3 ? b.ui : undefined) },
+    updatedAt,
   };
 }
