@@ -49,7 +49,12 @@
       "dependencyDashboardApproval": true,
       "automerge": false,
       "addLabels": ["major-update"]
+    },
+    {
+      "description": "Pin Docker bases so same-tag security rebuilds produce reviewed digest updates.",
+      "matchDatasources": ["docker"],
+      "pinDigests": true
     }
   ],
-  "dependencyDashboardTitle": "Renovate Dashboard — sourdough-planner"
+  "dependencyDashboardTitle": "Renovate Dashboard \u2014 sourdough-planner"
 }

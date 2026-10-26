@@ -22,7 +22,9 @@ ENV NODE_ENV=production \
 WORKDIR /app
 # Production dependencies only (the server's openid-client); root-owned and read-only at runtime.
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
+# npm is only needed to install the server dependencies, not to run the application.
+RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force \
+    && npm uninstall --global npm
 COPY --chown=1000:1000 --from=build /app/dist ./dist
 COPY --chown=1000:1000 server ./server
 # The official image's `node` user is uid/gid 1000; use the numeric id so the
