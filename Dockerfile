@@ -1,7 +1,7 @@
 # Build the SPA, then serve it from the Node server in server/: static files always; with
 # accounts configured, also login and the state API over SQLite in $DATA_DIR (PLAN-accounts §3).
 # Pinned to 22.23: node:sqlite's API is still "active development" and the pin absorbs it.
-FROM node:22.23-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS build
+FROM node:26.13-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -10,7 +10,7 @@ COPY public ./public
 COPY src ./src
 RUN npm run build
 
-FROM node:22.23-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS runtime
+FROM node:26.13-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS runtime
 # NODE_OPTIONS: node:sqlite prints an ExperimentalWarning on every start in 22.x; the pin above
 # is the deliberate acceptance of that API, so the warning is noise in the logs.
 ENV NODE_ENV=production \
