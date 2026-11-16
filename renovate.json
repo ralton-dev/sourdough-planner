@@ -1,28 +1,17 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "github>ralton-dev/.github"
-  ],
+  "extends": ["github>ralton-dev/.github"],
   "dependencyDashboardTitle": "Renovate Dashboard — sourdough-planner",
   "packageRules": [
     {
       "description": "Group related Vitest minor/patch releases together.",
-      "matchPackageNames": [
-        "vitest",
-        "@vitest/**"
-      ],
-      "matchUpdateTypes": [
-        "minor",
-        "patch",
-        "digest"
-      ],
+      "matchPackageNames": ["vitest", "@vitest/**"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
       "groupName": "Vitest"
     },
     {
       "description": "Pin Docker bases so same-tag security rebuilds produce reviewed digest updates.",
-      "matchDatasources": [
-        "docker"
-      ],
+      "matchDatasources": ["docker"],
       "pinDigests": true
     }
   ]
