@@ -21,7 +21,7 @@
     "screens:print": "node scripts/screens/print.mjs"
   },
   "dependencies": {
-    "openid-client": "6.8.9"
+    "openid-client": "6.9.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
@@ -29,7 +29,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.0",
-    "driver.js": "1.11.0",
+    "driver.js": "1.14.0",
     "eslint": "^10.0.0",
     "eslint-plugin-react-hooks": "^7.0.0",
     "prettier": "^3.0.0",
